@@ -5,7 +5,33 @@
 
 use super::*;
 use crate::exec_cell::CommandOutput;
+use std::fs::OpenOptions;
+use std::io::Write;
 
+fn append_v3_tool_line(
+    path: &std::path::Path,
+    tool: &str,
+    call_id: &str,
+    exit_code: i32,
+    message: &str,
+) {
+    let message: String = message
+        .replace(['\r', '\n'], " ")
+        .chars()
+        .take(400)
+        .collect();
+    let line = format!(
+        "{} 🔴 🧰{} 🔗{} 📝\"exit={} {}\"\n",
+        chrono::Local::now().format("%d-%b %H:%M:%S"),
+        tool,
+        call_id,
+        exit_code,
+        message
+    );
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = file.write_all(line.as_bytes());
+    }
+}
 impl ChatWidget {
     pub(super) fn flush_unified_exec_wait_streak(&mut self) {
         let Some(wait) = self.unified_exec_wait_streak.take() else {
@@ -370,6 +396,42 @@ impl ChatWidget {
         let is_unified_exec_interaction =
             matches!(source, ExecCommandSource::UnifiedExecInteraction);
         let is_user_shell = source == ExecCommandSource::UserShell;
+        let failed_ordinary_result = !is_user_shell
+            && !is_unified_exec_source(source)
+            && status != codex_app_server_protocol::CommandExecutionStatus::Declined
+            && (status == codex_app_server_protocol::CommandExecutionStatus::Failed
+                || (status == codex_app_server_protocol::CommandExecutionStatus::Completed
+                    && exit_code != 0));
+
+        if failed_ordinary_result && self.config.hide_tool_activity.hide_failures {
+            let first_suppression = self.suppressed_exec_calls.insert(id.clone());
+            if first_suppression {
+                if let Some(path) = self.config.hide_tool_activity.tool_error_log.as_deref() {
+                    append_v3_tool_line(path, "exec_command", &id, exit_code, &aggregated_output);
+                }
+            }
+            let removed = self
+                .transcript
+                .active_cell
+                .as_mut()
+                .and_then(|cell| cell.as_any_mut().downcast_mut::<ExecCell>())
+                .is_some_and(|cell| cell.remove_call(&id));
+            if removed {
+                let empty = self
+                    .transcript
+                    .active_cell
+                    .as_ref()
+                    .and_then(|cell| cell.as_any().downcast_ref::<ExecCell>())
+                    .is_some_and(ExecCell::is_empty);
+                if empty {
+                    let _ = self.transcript.take_active_cell();
+                } else {
+                    self.bump_active_cell_revision();
+                }
+                self.request_redraw();
+            }
+            return;
+        }
         // Completion-only replay has no begin event to join adjacent exploration. Extend only
         // a finished, compatible group; an unrelated running group must retain orphan routing.
         if let Some(cell) = self

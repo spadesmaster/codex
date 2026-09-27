@@ -38,6 +38,8 @@ pub(crate) struct GoalToolExecutor {
     event_emitter: GoalEventEmitter,
     metrics: GoalMetrics,
     max_goal_token_budget: Option<i64>,
+    update_goal_blocked: Option<String>,
+    update_goal_complete: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -93,6 +95,8 @@ impl GoalToolExecutor {
             event_emitter,
             metrics,
             max_goal_token_budget: None,
+            update_goal_blocked: None,
+            update_goal_complete: None,
         }
     }
 
@@ -115,6 +119,8 @@ impl GoalToolExecutor {
             event_emitter,
             metrics,
             max_goal_token_budget,
+            update_goal_blocked: None,
+            update_goal_complete: None,
         }
     }
 
@@ -125,6 +131,8 @@ impl GoalToolExecutor {
         analytics: GoalAnalytics,
         event_emitter: GoalEventEmitter,
         metrics: GoalMetrics,
+        update_goal_blocked: Option<String>,
+        update_goal_complete: Option<String>,
     ) -> Self {
         Self {
             kind: GoalToolKind::Update,
@@ -136,6 +144,8 @@ impl GoalToolExecutor {
             event_emitter,
             metrics,
             max_goal_token_budget: None,
+            update_goal_blocked,
+            update_goal_complete,
         }
     }
 }
@@ -245,6 +255,16 @@ impl GoalToolExecutor {
         invocation: ToolCall<'_>,
     ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
         let args: UpdateGoalArgs = parse_arguments(invocation.function_arguments()?)?;
+        if args.status == ThreadGoalStatus::Complete
+            && let Some(message) = &self.update_goal_complete
+        {
+            return Err(FunctionCallError::RespondToModel(message.clone()));
+        }
+        if args.status == ThreadGoalStatus::Blocked
+            && let Some(message) = &self.update_goal_blocked
+        {
+            return Err(FunctionCallError::RespondToModel(message.clone()));
+        }
         if !matches!(
             args.status,
             ThreadGoalStatus::Complete | ThreadGoalStatus::Blocked | ThreadGoalStatus::Paused

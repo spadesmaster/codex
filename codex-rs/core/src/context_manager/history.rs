@@ -64,6 +64,8 @@ use codex_utils_output_truncation::approx_token_count;
 use codex_utils_output_truncation::approx_tokens_from_byte_count_i64;
 use codex_utils_output_truncation::truncate_function_output_payload;
 use codex_utils_output_truncation::with_serialization_allowance;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -174,6 +176,12 @@ impl ConversationHistorySnapshot for SharedConversationHistory {
                 }),
         )
     }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct HistoryTrimConfig {
+    pub trim_success: bool,
+    pub trim_after: Option<usize>,
 }
 
 impl ContextManager {
@@ -470,6 +478,20 @@ impl ContextManager {
     /// is stripped from messages and tool outputs according to `input_modalities`.
     pub(crate) fn for_prompt(self, input_modalities: &[InputModality]) -> Vec<ResponseItem> {
         self.for_prompt_annotated(input_modalities)
+            .into_iter()
+            .map(ResponseItemEnvelope::into_item)
+            .collect()
+    }
+
+    pub(crate) fn for_prompt_with_trim(
+        mut self,
+        input_modalities: &[InputModality],
+        cfg: &HistoryTrimConfig,
+    ) -> Vec<ResponseItem> {
+        self.normalize_history(input_modalities);
+        let mut items = Arc::unwrap_or_clone(self.items);
+        trim_success_pairs(&mut items, cfg);
+        items
             .into_iter()
             .map(ResponseItemEnvelope::into_item)
             .collect()
@@ -1218,6 +1240,67 @@ fn user_message_positions(items: &[ResponseItemEnvelope]) -> Vec<usize> {
         }
     }
     positions
+}
+
+fn trim_success_pairs(items: &mut Vec<ResponseItemEnvelope>, cfg: &HistoryTrimConfig) {
+    let Some(keep_after) = cfg.trim_after else {
+        return;
+    };
+    if !cfg.trim_success {
+        return;
+    }
+    let mut pending: HashMap<String, (usize, bool)> = HashMap::new();
+    let mut pairs: Vec<(usize, usize, Option<bool>)> = Vec::new();
+    for (index, envelope) in items.iter().enumerate() {
+        match &envelope.item {
+            ResponseItem::FunctionCall { call_id, name, .. }
+            | ResponseItem::CustomToolCall { call_id, name, .. } => {
+                pending.insert(call_id.clone(), (index, is_goal_tool(name)));
+            }
+            ResponseItem::FunctionCallOutput {
+                call_id: Some(call_id),
+                output,
+                ..
+            } => {
+                if let Some((call_index, excluded)) = pending.remove(call_id) {
+                    if !excluded {
+                        pairs.push((call_index, index, output.success));
+                    }
+                }
+            }
+            ResponseItem::FunctionCallOutput { call_id: None, .. } => {}
+            ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => {
+                if let Some((call_index, excluded)) = pending.remove(call_id) {
+                    if !excluded {
+                        pairs.push((call_index, index, output.success));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut eligible = pairs
+        .into_iter()
+        .filter(|(_, _, success)| *success == Some(true))
+        .collect::<Vec<_>>();
+    let remove_count = eligible.len().saturating_sub(keep_after);
+    let mut remove = HashSet::new();
+    for (call_index, output_index, _) in eligible.drain(..remove_count) {
+        remove.insert(call_index);
+        remove.insert(output_index);
+    }
+    let mut index = 0;
+    items.retain(|_| {
+        let keep = !remove.contains(&index);
+        index += 1;
+        keep
+    });
+}
+
+fn is_goal_tool(name: &str) -> bool {
+    matches!(name, "get_goal" | "create_goal" | "update_goal")
 }
 
 #[cfg(test)]

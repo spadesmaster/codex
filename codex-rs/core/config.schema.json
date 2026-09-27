@@ -1718,6 +1718,14 @@
           "format": "uint64",
           "minimum": 1.0,
           "type": "integer"
+        },
+        "update_goal_blocked": {
+          "description": "Model-visible text returned when a blocked goal transition is denied.",
+          "type": "string"
+        },
+        "update_goal_complete": {
+          "description": "Model-visible text returned when a complete goal transition is denied.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -1889,6 +1897,28 @@
         "reasoning"
       ],
       "type": "string"
+    },
+    "HideToolActivityToml": {
+      "additionalProperties": false,
+      "properties": {
+        "hide_failures": {
+          "default": false,
+          "type": "boolean"
+        },
+        "tool_error_log": {
+          "type": "string"
+        },
+        "trim_after": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "trim_success": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     },
     "History": {
       "additionalProperties": false,
@@ -7115,6 +7145,15 @@
       "default": false,
       "description": "When set to `true`, `AgentReasoning` events will be hidden from the UI/output. Defaults to `false`.",
       "type": "boolean"
+    },
+    "hide_tool_activity": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/HideToolActivityToml"
+        }
+      ],
+      "default": null,
+      "description": "Output visibility controls for tool activity."
     },
     "history": {
       "allOf": [

@@ -407,7 +407,7 @@ impl ToolOutput for ExecCommandToolOutput {
     }
 
     fn success_for_logging(&self) -> bool {
-        true
+        self.exit_code.map(|code| code == 0).unwrap_or(true)
     }
 
     fn to_response_item(&self, call_id: &str, payload: &ToolPayload) -> ResponseInputItem {
@@ -417,7 +417,7 @@ impl ToolOutput for ExecCommandToolOutput {
             vec![FunctionCallOutputContentItem::InputText {
                 text: self.response_text(),
             }],
-            Some(true),
+            self.exit_code.map(|code| code == 0),
         )
     }
 

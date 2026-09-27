@@ -160,6 +160,17 @@ impl ExecCell {
         true
     }
 
+    /// Removes a call before the result can be rendered.
+    pub(crate) fn remove_call(&mut self, call_id: &str) -> bool {
+        let before = self.group.calls.len();
+        self.group.calls.retain(|call| call.call_id != call_id);
+        before != self.group.calls.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.group.calls.is_empty()
+    }
+
     pub(crate) fn should_flush(&self) -> bool {
         // Exploration stays open for adjacent calls, including after a failed read/list/search.
         !self.is_exploring_cell() && self.group.calls.iter().all(|c| c.duration.is_some())

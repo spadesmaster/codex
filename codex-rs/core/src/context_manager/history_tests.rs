@@ -3144,3 +3144,298 @@ fn text_only_items_count_decoded_content() {
 
     assert_eq!(estimated, "Hello, \"world\"!\nこんにちは".len() as i64);
 }
+fn trim_pair(id: &str, name: &str, success: Option<bool>) -> Vec<ResponseItem> {
+    let mut output = FunctionCallOutputPayload::from_text("ok".to_string());
+    output.success = success;
+    vec![
+        ResponseItem::FunctionCall {
+            id: None,
+            name: name.to_string(),
+            namespace: None,
+            arguments: "{}".to_string(),
+            encrypted_function_args: None,
+            call_id: id.to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::FunctionCallOutput {
+            id: None,
+            call_id: Some(id.to_string()),
+            name: None,
+            namespace: None,
+            output,
+            internal_chat_message_metadata_passthrough: None,
+        },
+    ]
+}
+
+#[test]
+fn trim_success_pairs_keeps_newest_requested_count() {
+    let items = [
+        trim_pair("a", "exec", Some(true)),
+        trim_pair("b", "exec", Some(true)),
+        trim_pair("c", "exec", Some(true)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    for (keep, expected) in [
+        (0, Vec::<&str>::new()),
+        (1, vec!["c"]),
+        (3, vec!["a", "b", "c"]),
+    ] {
+        let history = create_history_with_items(items.clone());
+        let output = history.for_prompt_with_trim(
+            &default_input_modalities(),
+            &HistoryTrimConfig {
+                trim_success: true,
+                trim_after: Some(keep),
+            },
+        );
+        let ids = output
+            .iter()
+            .filter_map(|item| match item {
+                ResponseItem::FunctionCall { call_id, .. } => Some(call_id.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
+    }
+
+    let unchanged = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_after: Some(0),
+        },
+    );
+    assert_eq!(unchanged.len(), 6);
+}
+
+#[test]
+fn trim_success_pairs_excludes_failed_running_goal_and_unpaired_calls() {
+    let mut items = trim_pair("ok", "exec", Some(true));
+    items.extend(trim_pair("failed", "exec", Some(false)));
+    items.extend(trim_pair("running", "exec", None));
+    items.push(ResponseItem::FunctionCall {
+        id: None,
+        name: "get_goal".to_string(),
+        namespace: None,
+        arguments: "{}".to_string(),
+        encrypted_function_args: None,
+        call_id: "goal".to_string(),
+        internal_chat_message_metadata_passthrough: None,
+    });
+    items.push(ResponseItem::FunctionCall {
+        id: None,
+        name: "exec".to_string(),
+        namespace: None,
+        arguments: "{}".to_string(),
+        encrypted_function_args: None,
+        call_id: "unpaired".to_string(),
+        internal_chat_message_metadata_passthrough: None,
+    });
+    let output = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: true,
+            trim_after: Some(0),
+        },
+    );
+    assert!(output.iter().all(|item| !matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "ok"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "failed"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "goal"
+    )));
+}
+#[test]
+fn trim_success_pairs_covers_spec_fixtures() {
+    let mut custom_output = FunctionCallOutputPayload::from_text("custom".to_string());
+    custom_output.success = Some(true);
+    let mut none_output = FunctionCallOutputPayload::from_text("none".to_string());
+    none_output.success = Some(true);
+    let items = vec![
+        ResponseItem::Reasoning {
+            id: None,
+            summary: Vec::new(),
+            content: None,
+            encrypted_content: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::FunctionCall {
+            id: None,
+            name: "exec".to_string(),
+            namespace: None,
+            arguments: "{}".to_string(),
+            encrypted_function_args: None,
+            call_id: "call-a".to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::FunctionCallOutput {
+            id: None,
+            call_id: Some("call-a".to_string()),
+            name: None,
+            namespace: None,
+            output: {
+                let mut output = FunctionCallOutputPayload::from_text("a".to_string());
+                output.success = Some(true);
+                output
+            },
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::Reasoning {
+            id: None,
+            summary: Vec::new(),
+            content: None,
+            encrypted_content: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::CustomToolCall {
+            id: None,
+            status: None,
+            call_id: "custom-b".to_string(),
+            name: "search".to_string(),
+            namespace: None,
+            input: "{}".to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::CustomToolCallOutput {
+            id: None,
+            call_id: "custom-b".to_string(),
+            name: None,
+            output: custom_output,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::FunctionCallOutput {
+            id: None,
+            call_id: None,
+            name: None,
+            namespace: None,
+            output: none_output,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::Other,
+    ];
+
+    let unchanged = create_history_with_items(items.clone());
+    let before = serde_json::to_vec(&unchanged.clone().for_prompt(&default_input_modalities()))
+        .expect("serialize baseline");
+    let unset = serde_json::to_vec(
+        &unchanged
+            .clone()
+            .for_prompt_with_trim(&default_input_modalities(), &HistoryTrimConfig::default()),
+    )
+    .expect("serialize unset");
+    assert_eq!(unset, before);
+    let disabled = unchanged.clone().for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_after: Some(0),
+        },
+    );
+    assert_eq!(
+        disabled,
+        unchanged.clone().for_prompt(&default_input_modalities())
+    );
+
+    let trimmed = unchanged.for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: true,
+            trim_after: Some(0),
+        },
+    );
+    assert!(trimmed.iter().all(|item| !matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "call-a"
+    )));
+    assert!(trimmed.iter().all(|item| !matches!(
+        item,
+        ResponseItem::CustomToolCall { call_id, .. } if call_id == "custom-b"
+    )));
+    assert!(
+        trimmed
+            .iter()
+            .any(|item| matches!(item, ResponseItem::FunctionCallOutput { call_id: None, .. }))
+    );
+    assert_eq!(
+        trimmed
+            .iter()
+            .filter(|item| matches!(item, ResponseItem::Reasoning { .. }))
+            .count(),
+        2
+    );
+
+}
+
+#[test]
+fn trim_success_pairs_preserves_parallel_running_unpaired_and_non_function_items() {
+    let mut items = trim_pair("call-a", "exec", Some(true));
+    items.extend(trim_pair("call-b", "exec", Some(true)));
+    items.extend(trim_pair("failed", "exec", Some(false)));
+    items.extend(trim_pair("running", "exec", None));
+    items.push(ResponseItem::FunctionCall {
+        id: None,
+        name: "exec".to_string(),
+        namespace: None,
+        arguments: "{}".to_string(),
+        encrypted_function_args: None,
+        call_id: "unpaired".to_string(),
+        internal_chat_message_metadata_passthrough: None,
+    });
+    items.push(reasoning_msg("retained"));
+
+    let output = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: true,
+            trim_after: Some(1),
+        },
+    );
+    let calls = output
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::FunctionCall { call_id, .. } => Some(call_id.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(calls, vec!["call-b", "failed", "running", "unpaired"]);
+    assert!(
+        output
+            .iter()
+            .any(|item| matches!(item, ResponseItem::Reasoning { .. }))
+    );
+}
+
+#[test]
+fn trim_success_pairs_preserves_compaction_output() {
+    let compaction: ResponseItem = serde_json::from_value(serde_json::json!({
+        "type": "compaction",
+        "id": "compaction-input",
+        "encrypted_content": "opaque checkpoint",
+    }))
+    .expect("compaction fixture");
+    let mut items = trim_pair("trimmed", "exec", Some(true));
+    items.push(compaction);
+    items.push(assistant_msg("compaction/guardian sentinel"));
+    let trimmed = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: true,
+            trim_after: Some(0),
+        },
+    );
+    assert!(trimmed.iter().any(|item| matches!(
+        item,
+        ResponseItem::Compaction { encrypted_content, .. }
+            if encrypted_content == "opaque checkpoint"
+    )));
+}

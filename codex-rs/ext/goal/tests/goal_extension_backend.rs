@@ -107,6 +107,8 @@ async fn installed_goal_tools_apply_maximum_token_budget() -> anyhow::Result<()>
     harness.thread_store.insert(GoalExtensionConfig {
         enabled: true,
         max_goal_token_budget: Some(100),
+        update_goal_blocked: None,
+        update_goal_complete: None,
     });
     let tools = harness.tools();
     let create_tool = tool_by_name(&tools, "create_goal");
@@ -1628,6 +1630,8 @@ async fn installed_tools_with_start(
         |_| GoalExtensionConfig {
             enabled: true,
             max_goal_token_budget: None,
+            update_goal_blocked: None,
+            update_goal_complete: None,
         },
     );
     let registry = builder.build();
@@ -1685,6 +1689,8 @@ impl GoalExtensionHarness {
             |_| GoalExtensionConfig {
                 enabled: true,
                 max_goal_token_budget: None,
+                update_goal_blocked: None,
+                update_goal_complete: None,
             },
         );
         let registry = Arc::new(builder.build());
@@ -2060,4 +2066,89 @@ fn protocol_status(status: codex_state::ThreadGoalStatus) -> ThreadGoalStatus {
         codex_state::ThreadGoalStatus::BudgetLimited => ThreadGoalStatus::BudgetLimited,
         codex_state::ThreadGoalStatus::Complete => ThreadGoalStatus::Complete,
     }
+}
+
+// M135 A2-GoalDone complete test text; insert into ext/goal/tests/goal_extension_backend.rs
+// beside the existing GoalExtensionHarness helpers.
+
+#[tokio::test]
+async fn m135_a2_goal_done_guard_2x2() -> anyhow::Result<()> {
+    for (blocked_text, complete_text) in [
+        (None, None),
+        (Some("blocked policy"), None),
+        (None, Some("complete policy")),
+        (Some("blocked policy"), Some("complete policy")),
+    ] {
+        run_m135_a2_transition_case(ThreadGoalStatus::Blocked, blocked_text, complete_text).await?;
+        run_m135_a2_transition_case(ThreadGoalStatus::Complete, blocked_text, complete_text).await?;
+    }
+    Ok(())
+}
+
+async fn run_m135_a2_transition_case(
+    status: ThreadGoalStatus,
+    blocked_text: Option<&str>,
+    complete_text: Option<&str>,
+) -> anyhow::Result<()> {
+    let runtime = test_runtime().await?;
+    let thread_id = test_thread_id()?;
+    seed_thread_metadata(runtime.as_ref(), thread_id).await?;
+    let harness = GoalExtensionHarness::new(runtime.clone(), thread_id).await?;
+    harness.thread_store.insert(GoalExtensionConfig {
+        enabled: true,
+        max_goal_token_budget: None,
+        update_goal_blocked: blocked_text.map(str::to_owned),
+        update_goal_complete: complete_text.map(str::to_owned),
+    });
+    let tools = harness.tools();
+    let create = tool_by_name(&tools, "create_goal");
+    let update = tool_by_name(&tools, "update_goal");
+    let get = tool_by_name(&tools, "get_goal");
+    create
+        .handle(tool_call(
+            "create_goal",
+            "call-create-m135-a2",
+            json!({ "objective": "m135 A2 goal completion guard" }),
+        ))
+        .await
+        .map_err(|error| anyhow::anyhow!("create failed: {error:?}"))?;
+    let before_invocation = tool_call("get_goal", "call-get-before-m135-a2", json!({}));
+    let before = get
+        .handle(before_invocation.clone())
+        .await
+        .map_err(|error| anyhow::anyhow!("get before failed: {error:?}"))?
+        .code_mode_result(&before_invocation.payload);
+    harness.sink.clear();
+    let invocation = tool_call(
+        "update_goal",
+        "call-update-m135-a2",
+        json!({ "status": status }),
+    );
+    let expected = match status {
+        ThreadGoalStatus::Blocked => blocked_text,
+        ThreadGoalStatus::Complete => complete_text,
+        _ => None,
+    };
+    let result = update.handle(invocation).await;
+    match expected {
+        Some(expected) => {
+            match result {
+                Err(FunctionCallError::RespondToModel(message)) => assert_eq!(message, expected),
+                _ => panic!("configured guard must deny"),
+            }
+            assert_eq!(harness.sink.goal_events(), Vec::<CapturedGoalEvent>::new());
+            let after_invocation = tool_call("get_goal", "call-get-after-m135-a2", json!({}));
+            let after = get
+                .handle(after_invocation.clone())
+                .await
+                .map_err(|error| anyhow::anyhow!("get after failed: {error:?}"))?
+                .code_mode_result(&after_invocation.payload);
+            assert_eq!(before, after);
+        }
+        None => match result {
+            Ok(_) => {}
+            Err(_) => panic!("unguarded transition failed"),
+        },
+    }
+    Ok(())
 }

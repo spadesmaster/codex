@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::num::NonZeroU64;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::HooksToml;
 use crate::browser_use::BrowserUseConfigToml;
@@ -158,6 +158,17 @@ pub struct CloudToml {
 #[schemars(deny_unknown_fields)]
 pub struct FeatureToggleToml {
     pub enabled: Option<bool>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[schemars(deny_unknown_fields)]
+pub struct HideToolActivityToml {
+    #[serde(default)]
+    pub hide_failures: bool,
+    pub tool_error_log: Option<PathBuf>,
+    #[serde(default)]
+    pub trim_success: bool,
+    pub trim_after: Option<usize>,
 }
 
 /// Base config deserialized from ~/.codex/config.toml.
@@ -379,6 +390,10 @@ pub struct ConfigToml {
 
     /// Collection of settings that are specific to the TUI.
     pub tui: Option<Tui>,
+
+    /// Output visibility controls for tool activity.
+    #[serde(default)]
+    pub hide_tool_activity: Option<HideToolActivityToml>,
 
     /// When set to `true`, `AgentReasoning` events will be hidden from the
     /// UI/output. Defaults to `false`.
@@ -703,6 +718,10 @@ where
 pub struct GoalsToml {
     /// Maximum token budget allowed for a goal and default budget for new goals.
     pub max_goal_token_budget: Option<NonZeroU64>,
+    /// Model-visible text returned when a blocked goal transition is denied.
+    pub update_goal_blocked: Option<String>,
+    /// Model-visible text returned when a complete goal transition is denied.
+    pub update_goal_complete: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
