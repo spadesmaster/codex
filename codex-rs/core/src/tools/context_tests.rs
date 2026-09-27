@@ -554,3 +554,34 @@ fn exec_command_tool_output_preserves_omission_metadata_when_truncated() {
     assert!(text.contains("Warning: truncated output (original token count: 42000)"));
     assert_eq!(text.matches(&marker).count(), 1);
 }
+#[test]
+fn exec_command_tool_output_success_tracks_exit_code_cases() {
+    let payload = ToolPayload::Function {
+        arguments: "{}".to_string(),
+    };
+    for (exit_code, expected) in [(Some(1), Some(false)), (None, None), (Some(0), Some(true))] {
+        let output = ExecCommandToolOutput {
+            event_call_id: "exit-case".to_string(),
+            chunk_id: "chunk".to_string(),
+            wall_time: std::time::Duration::from_millis(1),
+            raw_output: b"output".to_vec(),
+            truncation_policy: TruncationPolicy::Tokens(10_000),
+            max_output_tokens: None,
+            process_id: None,
+            exit_code,
+            original_token_count: None,
+            output_omitted_bytes: None,
+            hook_command: None,
+        };
+        let ResponseInputItem::FunctionCallOutput { output, .. } =
+            output.to_response_item("exit-case", &payload)
+        else {
+            panic!("expected function output");
+        };
+        assert_eq!(output.success, expected);
+        assert_eq!(
+            output.success.is_some_and(|success| !success),
+            exit_code == Some(1)
+        );
+    }
+}

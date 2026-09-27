@@ -604,6 +604,15 @@ pub enum ThreadStoreConfig {
     InMemory { id: String },
 }
 
+/// Output visibility controls for tool activity.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HideToolActivityConfig {
+    pub hide_failures: bool,
+    pub tool_error_log: Option<PathBuf>,
+    pub trim_success: bool,
+    pub trim_after: Option<usize>,
+}
+
 /// Application configuration loaded from disk and merged with overrides.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
@@ -679,6 +688,9 @@ pub struct Config {
     /// When set to `true`, `AgentReasoningRawContentEvent` events will be shown in the UI/output.
     /// Defaults to `false`.
     pub show_raw_agent_reasoning: bool,
+
+    /// Output visibility controls for tool activity.
+    pub hide_tool_activity: HideToolActivityConfig,
 
     /// Base instructions override.
     pub base_instructions: Option<String>,
@@ -937,6 +949,11 @@ pub struct Config {
     /// Maximum token budget allowed for a goal and default budget for new goals.
     pub max_goal_token_budget: Option<i64>,
 
+    /// Model-visible text returned when a blocked goal transition is denied.
+    pub update_goal_blocked: Option<String>,
+
+    /// Model-visible text returned when a complete goal transition is denied.
+    pub update_goal_complete: Option<String>,
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
 
@@ -4362,6 +4379,20 @@ impl Config {
                     })
                 })
                 .transpose()?,
+            update_goal_blocked: cfg
+                .goals
+                .as_ref()
+                .and_then(|goals| goals.update_goal_blocked.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
+            update_goal_complete: cfg
+                .goals
+                .as_ref()
+                .and_then(|goals| goals.update_goal_complete.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned),
             memories: memories_config,
             agent_interrupt_message_enabled,
             codex_home,
@@ -4385,6 +4416,16 @@ impl Config {
                 .show_raw_agent_reasoning
                 .or(show_raw_agent_reasoning)
                 .unwrap_or(false),
+            hide_tool_activity: cfg
+                .hide_tool_activity
+                .as_ref()
+                .map(|value| HideToolActivityConfig {
+                    hide_failures: value.hide_failures,
+                    tool_error_log: value.tool_error_log.clone(),
+                    trim_success: value.trim_success,
+                    trim_after: value.trim_after,
+                })
+                .unwrap_or_default(),
             guardian_policy_config,
             guardian_extra_policy,
             guardian_policy_template,

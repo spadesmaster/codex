@@ -1,4 +1,5 @@
 use super::*;
+use core_test_support::PathExt;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
@@ -2247,4 +2248,450 @@ async fn apply_patch_request_omits_diff_summary_from_modal() -> anyhow::Result<(
     assert!(!contents.contains("+line two"));
 
     Ok(())
+}
+
+#[tokio::test]
+async fn failed_agent_exec_off_is_visible_and_on_is_hidden() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "agent-fail".to_string(),
+        command: "printf failure".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("failure".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(failed.clone());
+    chat.handle_command_execution_completed_now(failed.clone());
+    let off_count = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(off_count, 1);
+
+    chat.config.hide_tool_activity.hide_failures = true;
+    chat.on_command_execution_started(failed.clone());
+    chat.handle_command_execution_completed_now(failed);
+    let on_count = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(on_count, 0);
+}
+
+#[tokio::test]
+async fn excluded_failed_exec_sources_remain_visible() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.hide_tool_activity.hide_failures = true;
+
+    for (index, source) in [
+        ExecCommandSource::UserShell,
+        ExecCommandSource::UnifiedExecStartup,
+        ExecCommandSource::UnifiedExecInteraction,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let failed = AppServerThreadItem::CommandExecution {
+            model_context: None,
+            sandbox_type: None,
+            id: format!("excluded-{index}"),
+            command: "printf excluded".to_string(),
+            cwd: chat.config.cwd.clone().into(),
+            process_id: None,
+            plugin_id: None,
+            script_path: None,
+            source,
+            status: AppServerCommandExecutionStatus::Failed,
+            command_actions: Vec::new(),
+            aggregated_output: Some("excluded".to_string()),
+            exit_code: Some(7),
+            duration_ms: Some(5),
+        };
+        chat.on_command_execution_started(failed.clone());
+        chat.handle_command_execution_completed_now(failed);
+    }
+
+    let visible = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(visible, 3);
+}
+
+#[tokio::test]
+async fn failed_exec_without_begin_is_hidden_without_replacement_cell() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.hide_tool_activity.hide_failures = true;
+    let failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "completion-only-fail".to_string(),
+        command: "printf failure".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("failure".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+
+    chat.handle_command_execution_completed_now(failed);
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(inserted, 0);
+}
+
+#[tokio::test]
+async fn red_hide_failures_config_mutes_failed_exec_output() {
+    let codex_home = tempfile::Builder::new()
+        .prefix("chatwidget-red-")
+        .tempdir()
+        .expect("codex home");
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        "[hide_tool_activity]\nhide_failures = true\n",
+    )
+    .expect("config");
+    let mut cfg = Config::load_default_with_cli_overrides_for_codex_home(
+        codex_home.path().to_path_buf(),
+        Vec::new(),
+    )
+    .await
+    .expect("config");
+    cfg.model = Some("gpt-5.6-sol".to_string());
+    cfg.codex_home = codex_home.path().abs();
+    cfg.sqlite = codex_state::SqliteConfig::new_for_testing(codex_home.path().abs());
+    cfg.log_dir = codex_home.path().join("log");
+    cfg.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
+    cfg.config_layer_stack = ConfigLayerStack::default();
+    cfg.startup_warnings.clear();
+    cfg.hide_tool_activity.hide_failures = true;
+    let resolved_model = get_model_offline_for_tests(cfg.model.as_deref());
+    let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
+    let model_catalog = test_model_catalog(&cfg);
+    let (tx_raw, mut rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+    let app_event_tx = AppEventSender::new(tx_raw);
+    let (op_tx, _op_rx) = tokio::sync::mpsc::unbounded_channel::<Op>();
+    let common = ChatWidgetInit {
+        requires_openai_auth: cfg.model_provider.requires_openai_auth,
+        local_settings: crate::local_settings::LocalSettings::from(&cfg),
+        config: cfg,
+        frame_requester: FrameRequester::test_dummy(),
+        app_event_tx,
+        workspace_command_runner: None,
+        initial_user_message: None,
+        enhanced_keys_supported: false,
+        has_chatgpt_account: false,
+        has_codex_backend_auth: false,
+        model_catalog,
+        feedback: codex_feedback::CodexFeedback::new(),
+        is_first_run: true,
+        status_account_display: None,
+        initial_plan_type: None,
+        model: Some(resolved_model.clone()),
+        startup_tooltip_override: None,
+        status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+        terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
+        session_telemetry,
+    };
+    let mut chat = ChatWidget::new_with_op_target(common, super::CodexOpTarget::Direct(op_tx));
+    chat.test_codex_home = Some(codex_home);
+    chat.clock_format = crate::clock_format::ClockFormat::TwentyFourHour;
+    chat.windows_sandbox_host = crate::app::WindowsSandboxHost::Local;
+    chat.windows_sandbox_config.requirements = Some(None);
+    chat.transcript.active_cell = None;
+    chat.transcript.active_cell_revision = 0;
+    chat.set_model(&resolved_model);
+    let failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "red-call".to_string(),
+        command: "printf line1".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("line1\r\nline2".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(failed.clone());
+    chat.handle_command_execution_completed_now(failed);
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(inserted, 0);
+}
+
+#[tokio::test]
+async fn tool_error_log_is_unset_off_and_failed_output_is_byte_identical() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "off-call".to_string(),
+        command: "printf off".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("off\n".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(failed.clone());
+    chat.handle_command_execution_completed_now(failed.clone());
+    let visible = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(visible, 1);
+    let (mut logged_chat, _logged_rx, _logged_op_rx) = make_chatwidget_manual(None).await;
+    let log_path = tempfile::NamedTempFile::new()
+        .expect("log")
+        .into_temp_path();
+    logged_chat.config.hide_tool_activity.hide_failures = true;
+    logged_chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
+    logged_chat.on_command_execution_started(failed.clone());
+    logged_chat.handle_command_execution_completed_now(failed);
+    let logged = std::fs::read_to_string(&log_path).expect("log read");
+    assert_eq!(logged.lines().count(), 1);
+}
+
+#[tokio::test]
+async fn hidden_failed_agent_exec_logs_once_caps_message_and_uses_v3() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let log_path = tempfile::NamedTempFile::new()
+        .expect("log")
+        .into_temp_path();
+    chat.config.hide_tool_activity.hide_failures = true;
+    chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
+    let failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "agent-log".to_string(),
+        command: "printf long".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some(format!("{}\r\nsecond", "x".repeat(500))),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(failed.clone());
+    chat.handle_command_execution_completed_now(failed.clone());
+    chat.handle_command_execution_completed_now(failed);
+    let line = std::fs::read_to_string(&log_path).expect("log read");
+    assert_eq!(line.lines().count(), 1);
+    assert!(
+        regex_lite::Regex::new(r#"^\d{2}-[A-Z][a-z]{2} \d{2}:\d{2}:\d{2} 🔴 🧰\S+ 🔗\S+ 📝".*"$"#,)
+            .expect("regex")
+            .is_match(line.trim_end())
+    );
+    let message = line
+        .trim_end()
+        .split_once(" 📝\"")
+        .expect("message slot")
+        .1
+        .strip_suffix('"')
+        .expect("message quote");
+    assert!(message.len() <= 407);
+    assert!(line.contains(&"x".repeat(400)));
+    assert!(!line.contains("second"));
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(inserted, 0);
+}
+
+#[tokio::test]
+async fn hidden_failed_completion_without_active_call_still_logs_once() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let log_path = tempfile::NamedTempFile::new()
+        .expect("log")
+        .into_temp_path();
+    chat.config.hide_tool_activity.hide_failures = true;
+    chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
+    let failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "missing-call".to_string(),
+        command: "printf missing".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("missing".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    chat.handle_command_execution_completed_now(failed);
+    assert_eq!(
+        std::fs::read_to_string(&log_path)
+            .expect("log read")
+            .lines()
+            .count(),
+        1
+    );
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(inserted, 0);
+}
+
+#[tokio::test]
+async fn excluded_sources_stay_visible_and_unlogged() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let log_path = tempfile::NamedTempFile::new()
+        .expect("log")
+        .into_temp_path();
+    chat.config.hide_tool_activity.hide_failures = true;
+    chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
+    for (index, source) in [
+        ExecCommandSource::UserShell,
+        ExecCommandSource::UnifiedExecStartup,
+        ExecCommandSource::UnifiedExecInteraction,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let failed = AppServerThreadItem::CommandExecution {
+            model_context: None,
+            sandbox_type: None,
+            id: format!("excluded-{index}"),
+            command: "printf excluded".to_string(),
+            cwd: chat.config.cwd.clone().into(),
+            process_id: None,
+            plugin_id: None,
+            script_path: None,
+            source,
+            status: AppServerCommandExecutionStatus::Failed,
+            command_actions: Vec::new(),
+            aggregated_output: Some("excluded".to_string()),
+            exit_code: Some(7),
+            duration_ms: Some(5),
+        };
+        chat.on_command_execution_started(failed.clone());
+        chat.handle_command_execution_completed_now(failed);
+    }
+    let visible = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(visible, 3);
+    assert!(
+        !log_path.exists()
+            || std::fs::read_to_string(&log_path)
+                .expect("log read")
+                .is_empty()
+    );
+    let (mut control_chat, _control_rx, _control_op_rx) = make_chatwidget_manual(None).await;
+    let control_log = tempfile::NamedTempFile::new()
+        .expect("control log")
+        .into_temp_path();
+    control_chat.config.hide_tool_activity.hide_failures = true;
+    control_chat.config.hide_tool_activity.tool_error_log = Some(control_log.to_path_buf());
+    let control_failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "agent-control".to_string(),
+        command: "printf control".to_string(),
+        cwd: control_chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("control".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    control_chat.on_command_execution_started(control_failed.clone());
+    control_chat.handle_command_execution_completed_now(control_failed);
+    assert_eq!(std::fs::read_to_string(&control_log).expect("control log read").lines().count(), 1);
+}
+
+#[tokio::test]
+async fn unwritable_tool_error_log_does_not_fail_suppression() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let directory = tempfile::tempdir().expect("directory");
+    chat.config.hide_tool_activity.hide_failures = true;
+    chat.config.hide_tool_activity.tool_error_log = Some(directory.path().to_path_buf());
+    let failed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        sandbox_type: None,
+        id: "unwritable-call".to_string(),
+        command: "printf unwritable".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("unwritable".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(failed.clone());
+    chat.handle_command_execution_completed_now(failed);
+    assert_eq!(
+        std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|event| match event {
+                AppEvent::InsertHistoryCell(cell) => Some(cell),
+                _ => None,
+            })
+            .count(),
+        0
+    );
 }

@@ -54,6 +54,8 @@ use crate::tool::GoalToolExecutor;
 pub struct GoalExtensionConfig {
     pub enabled: bool,
     pub max_goal_token_budget: Option<i64>,
+    pub update_goal_blocked: Option<String>,
+    pub update_goal_complete: Option<String>,
 }
 
 #[derive(Clone)]
@@ -543,9 +545,10 @@ where
         if !runtime.tools_visible() {
             return Vec::new();
         }
-        let max_goal_token_budget = thread_store
+        let (max_goal_token_budget, update_goal_blocked, update_goal_complete) = thread_store
             .get::<GoalExtensionConfig>()
-            .and_then(|config| config.max_goal_token_budget);
+            .map(|config| (config.max_goal_token_budget, config.update_goal_blocked.clone(), config.update_goal_complete.clone()))
+            .unwrap_or((None, None, None));
 
         let tools = [
             GoalToolExecutor::get(
@@ -572,6 +575,8 @@ where
                 self.analytics.clone(),
                 self.event_emitter.clone(),
                 self.metrics.clone(),
+                update_goal_blocked,
+                update_goal_complete,
             ),
         ];
         tools
