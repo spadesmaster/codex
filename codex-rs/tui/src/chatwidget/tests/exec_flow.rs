@@ -2255,7 +2255,6 @@ async fn failed_agent_exec_off_is_visible_and_on_is_hidden() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "agent-fail".to_string(),
         command: "printf failure".to_string(),
         cwd: chat.config.cwd.clone().into(),
@@ -2306,7 +2305,6 @@ async fn excluded_failed_exec_sources_remain_visible() {
     {
         let failed = AppServerThreadItem::CommandExecution {
             model_context: None,
-            sandbox_type: None,
             id: format!("excluded-{index}"),
             command: "printf excluded".to_string(),
             cwd: chat.config.cwd.clone().into(),
@@ -2339,7 +2337,6 @@ async fn failed_exec_without_begin_is_hidden_without_replacement_cell() {
     chat.config.hide_tool_activity.hide_failures = true;
     let failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "completion-only-fail".to_string(),
         command: "printf failure".to_string(),
         cwd: chat.config.cwd.clone().into(),
@@ -2418,7 +2415,6 @@ async fn red_hide_failures_config_mutes_failed_exec_output() {
         session_telemetry,
     };
     let mut chat = ChatWidget::new_with_op_target(common, super::CodexOpTarget::Direct(op_tx));
-    chat.test_codex_home = Some(codex_home);
     chat.clock_format = crate::clock_format::ClockFormat::TwentyFourHour;
     chat.windows_sandbox_host = crate::app::WindowsSandboxHost::Local;
     chat.windows_sandbox_config.requirements = Some(None);
@@ -2427,7 +2423,6 @@ async fn red_hide_failures_config_mutes_failed_exec_output() {
     chat.set_model(&resolved_model);
     let failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "red-call".to_string(),
         command: "printf line1".to_string(),
         cwd: chat.config.cwd.clone().into(),
@@ -2457,7 +2452,6 @@ async fn tool_error_log_is_unset_off_and_failed_output_is_byte_identical() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "off-call".to_string(),
         command: "printf off".to_string(),
         cwd: chat.config.cwd.clone().into(),
@@ -2502,7 +2496,6 @@ async fn hidden_failed_agent_exec_logs_once_caps_message_and_uses_v3() {
     chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
     let failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "agent-log".to_string(),
         command: "printf long".to_string(),
         cwd: chat.config.cwd.clone().into(),
@@ -2555,7 +2548,6 @@ async fn hidden_failed_completion_without_active_call_still_logs_once() {
     chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
     let failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "missing-call".to_string(),
         command: "printf missing".to_string(),
         cwd: chat.config.cwd.clone().into(),
@@ -2604,7 +2596,6 @@ async fn excluded_sources_stay_visible_and_unlogged() {
     {
         let failed = AppServerThreadItem::CommandExecution {
             model_context: None,
-            sandbox_type: None,
             id: format!("excluded-{index}"),
             command: "printf excluded".to_string(),
             cwd: chat.config.cwd.clone().into(),
@@ -2642,7 +2633,6 @@ async fn excluded_sources_stay_visible_and_unlogged() {
     control_chat.config.hide_tool_activity.tool_error_log = Some(control_log.to_path_buf());
     let control_failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "agent-control".to_string(),
         command: "printf control".to_string(),
         cwd: control_chat.config.cwd.clone().into(),
@@ -2669,7 +2659,6 @@ async fn unwritable_tool_error_log_does_not_fail_suppression() {
     chat.config.hide_tool_activity.tool_error_log = Some(directory.path().to_path_buf());
     let failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        sandbox_type: None,
         id: "unwritable-call".to_string(),
         command: "printf unwritable".to_string(),
         cwd: chat.config.cwd.clone().into(),
