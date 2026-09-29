@@ -3189,6 +3189,8 @@ fn trim_success_pairs_keeps_newest_requested_count() {
             &default_input_modalities(),
             &HistoryTrimConfig {
                 trim_success: true,
+                trim_failures: false,
+                trim_warnings: false,
                 trim_after: Some(keep),
             },
         );
@@ -3206,6 +3208,8 @@ fn trim_success_pairs_keeps_newest_requested_count() {
         &default_input_modalities(),
         &HistoryTrimConfig {
             trim_success: false,
+            trim_failures: false,
+            trim_warnings: false,
             trim_after: Some(0),
         },
     );
@@ -3239,6 +3243,8 @@ fn trim_success_pairs_excludes_failed_running_goal_and_unpaired_calls() {
         &default_input_modalities(),
         &HistoryTrimConfig {
             trim_success: true,
+            trim_failures: false,
+            trim_warnings: false,
             trim_after: Some(0),
         },
     );
@@ -3338,6 +3344,8 @@ fn trim_success_pairs_covers_spec_fixtures() {
         &default_input_modalities(),
         &HistoryTrimConfig {
             trim_success: false,
+            trim_failures: false,
+            trim_warnings: false,
             trim_after: Some(0),
         },
     );
@@ -3350,6 +3358,8 @@ fn trim_success_pairs_covers_spec_fixtures() {
         &default_input_modalities(),
         &HistoryTrimConfig {
             trim_success: true,
+            trim_failures: false,
+            trim_warnings: false,
             trim_after: Some(0),
         },
     );
@@ -3397,6 +3407,8 @@ fn trim_success_pairs_preserves_parallel_running_unpaired_and_non_function_items
         &default_input_modalities(),
         &HistoryTrimConfig {
             trim_success: true,
+            trim_failures: false,
+            trim_warnings: false,
             trim_after: Some(1),
         },
     );
@@ -3430,6 +3442,8 @@ fn trim_success_pairs_preserves_compaction_output() {
         &default_input_modalities(),
         &HistoryTrimConfig {
             trim_success: true,
+            trim_failures: false,
+            trim_warnings: false,
             trim_after: Some(0),
         },
     );
@@ -3437,5 +3451,248 @@ fn trim_success_pairs_preserves_compaction_output() {
         item,
         ResponseItem::Compaction { encrypted_content, .. }
             if encrypted_content == "opaque checkpoint"
+    )));
+}
+
+// M135 A7-TrimFail: same delayed-removal contract as A6-TrimOk (trim_success_pairs
+// above), mirrored for failed pairs instead of successful ones.
+
+#[test]
+fn trim_failure_pairs_keeps_newest_requested_count() {
+    let items = [
+        trim_pair("a", "exec", Some(false)),
+        trim_pair("b", "exec", Some(false)),
+        trim_pair("c", "exec", Some(false)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    for (keep, expected) in [
+        (0, Vec::<&str>::new()),
+        (1, vec!["c"]),
+        (3, vec!["a", "b", "c"]),
+    ] {
+        let history = create_history_with_items(items.clone());
+        let output = history.for_prompt_with_trim(
+            &default_input_modalities(),
+            &HistoryTrimConfig {
+                trim_success: false,
+                trim_failures: true,
+                trim_warnings: false,
+                trim_after: Some(keep),
+            },
+        );
+        let ids = output
+            .iter()
+            .filter_map(|item| match item {
+                ResponseItem::FunctionCall { call_id, .. } => Some(call_id.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
+    }
+
+    let unchanged = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_failures: false,
+            trim_warnings: false,
+            trim_after: Some(0),
+        },
+    );
+    assert_eq!(unchanged.len(), 6);
+}
+
+#[test]
+fn trim_failure_pairs_excludes_succeeded_running_goal_and_unpaired_calls() {
+    let mut items = trim_pair("failed", "exec", Some(false));
+    items.extend(trim_pair("ok", "exec", Some(true)));
+    items.extend(trim_pair("running", "exec", None));
+    items.push(ResponseItem::FunctionCall {
+        id: None,
+        name: "get_goal".to_string(),
+        namespace: None,
+        arguments: "{}".to_string(),
+        encrypted_function_args: None,
+        call_id: "goal".to_string(),
+        internal_chat_message_metadata_passthrough: None,
+    });
+    items.push(ResponseItem::FunctionCall {
+        id: None,
+        name: "exec".to_string(),
+        namespace: None,
+        arguments: "{}".to_string(),
+        encrypted_function_args: None,
+        call_id: "unpaired".to_string(),
+        internal_chat_message_metadata_passthrough: None,
+    });
+    let output = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_failures: true,
+            trim_warnings: false,
+            trim_after: Some(0),
+        },
+    );
+    assert!(output.iter().all(|item| !matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "failed"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "ok"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "goal"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "running"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "unpaired"
+    )));
+}
+
+#[test]
+fn trim_failure_pairs_independent_of_trim_success() {
+    // Enabling both A6 and A7 at once must not let one class eat the other's
+    // pairs: a failed pair survives trim_success-only, and a successful pair
+    // survives trim_failures-only.
+    let mut items = trim_pair("ok", "exec", Some(true));
+    items.extend(trim_pair("failed", "exec", Some(false)));
+
+    let success_only = create_history_with_items(items.clone()).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: true,
+            trim_failures: false,
+            trim_warnings: false,
+            trim_after: Some(0),
+        },
+    );
+    assert!(success_only.iter().all(|item| !matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "ok"
+    )));
+    assert!(success_only.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "failed"
+    )));
+
+    let failures_only = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_failures: true,
+            trim_warnings: false,
+            trim_after: Some(0),
+        },
+    );
+    assert!(failures_only.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "ok"
+    )));
+    assert!(failures_only.iter().all(|item| !matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "failed"
+    )));
+}
+
+// M135 A8-TrimWarn: same delayed-removal contract, for the new warning marker
+// (`is_warning_output` in history.rs) instead of the plain success verdict.
+
+fn trim_pair_with_text(id: &str, name: &str, success: Option<bool>, text: &str) -> Vec<ResponseItem> {
+    let mut output = FunctionCallOutputPayload::from_text(text.to_string());
+    output.success = success;
+    vec![
+        ResponseItem::FunctionCall {
+            id: None,
+            name: name.to_string(),
+            namespace: None,
+            arguments: "{}".to_string(),
+            encrypted_function_args: None,
+            call_id: id.to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        },
+        ResponseItem::FunctionCallOutput {
+            id: None,
+            call_id: Some(id.to_string()),
+            name: None,
+            namespace: None,
+            output,
+            internal_chat_message_metadata_passthrough: None,
+        },
+    ]
+}
+
+#[test]
+fn trim_warning_pairs_keeps_newest_requested_count() {
+    let items = [
+        trim_pair_with_text("a", "exec", Some(true), "Warning: retrying"),
+        trim_pair_with_text("b", "exec", Some(true), "warning: retrying"),
+        trim_pair_with_text("c", "exec", Some(true), "WARNING: retrying"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+
+    for (keep, expected) in [
+        (0, Vec::<&str>::new()),
+        (1, vec!["c"]),
+        (3, vec!["a", "b", "c"]),
+    ] {
+        let history = create_history_with_items(items.clone());
+        let output = history.for_prompt_with_trim(
+            &default_input_modalities(),
+            &HistoryTrimConfig {
+                trim_success: false,
+                trim_failures: false,
+                trim_warnings: true,
+                trim_after: Some(keep),
+            },
+        );
+        let ids = output
+            .iter()
+            .filter_map(|item| match item {
+                ResponseItem::FunctionCall { call_id, .. } => Some(call_id.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
+    }
+}
+
+#[test]
+fn trim_warning_pairs_excludes_plain_success_and_failure() {
+    let mut items = trim_pair_with_text("warned", "exec", Some(true), "warning: low disk space");
+    items.extend(trim_pair("clean", "exec", Some(true)));
+    items.extend(trim_pair("failed", "exec", Some(false)));
+
+    let output = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_failures: false,
+            trim_warnings: true,
+            trim_after: Some(0),
+        },
+    );
+    assert!(output.iter().all(|item| !matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "warned"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "clean"
+    )));
+    assert!(output.iter().any(|item| matches!(
+        item,
+        ResponseItem::FunctionCall { call_id, .. } if call_id == "failed"
     )));
 }

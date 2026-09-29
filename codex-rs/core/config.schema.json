@@ -1905,6 +1905,10 @@
           "default": false,
           "type": "boolean"
         },
+        "hide_warnings": {
+          "default": false,
+          "type": "boolean"
+        },
         "tool_error_log": {
           "type": "string"
         },
@@ -1913,7 +1917,15 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "trim_failures": {
+          "default": false,
+          "type": "boolean"
+        },
         "trim_success": {
+          "default": false,
+          "type": "boolean"
+        },
+        "trim_warnings": {
           "default": false,
           "type": "boolean"
         }
@@ -4103,6 +4115,32 @@
       },
       "type": "object"
     },
+    "ToolActivity": {
+      "description": "QuietCodex tool-activity noise level. See `Tui::tool_activity` for the exact per-level contract.",
+      "oneOf": [
+        {
+          "description": "Stock behavior: nothing hidden.",
+          "enum": [
+            "off"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Hide routine successful activity only; failures/errors/approval records still show.",
+          "enum": [
+            "concise"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Hide routine successful activity only; failures, warnings, approvals, declines, and control records still show.",
+          "enum": [
+            "quiet"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "ToolExposureSurface": {
       "description": "A model-facing surface on which a tool can be exposed.",
       "oneOf": [
@@ -4617,6 +4655,15 @@
           "default": null,
           "description": "Syntax highlighting theme name (kebab-case).\n\nWhen set, overrides automatic light/dark theme detection. Use `/theme` in the TUI or see `$CODEX_HOME/themes` for custom themes.",
           "type": "string"
+        },
+        "tool_activity": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ToolActivity"
+            }
+          ],
+          "default": "quiet",
+          "description": "QuietCodex tool-activity noise level: - `quiet`: default; hide routine successful agent tool/exec activity while retaining failures, warnings, approvals, declines, control records, and user content. - `concise`: hide the same routine successful activity and retain the same safety-relevant records. - `off`: full output, retaining all tool activity. Live interactive approval prompts are unaffected regardless of level — they render through a separate widget system, not the transcript. Invalid values fail safely to the default behavior."
         },
         "vim_mode_default": {
           "default": false,

@@ -516,6 +516,8 @@ pub(crate) async fn run_turn(
                     &step_context.settings.model_info.input_modalities,
                     &HistoryTrimConfig {
                         trim_success: step_context.turn.config.hide_tool_activity.trim_success,
+                        trim_failures: step_context.turn.config.hide_tool_activity.trim_failures,
+                        trim_warnings: step_context.turn.config.hide_tool_activity.trim_warnings,
                         trim_after: step_context.turn.config.hide_tool_activity.trim_after,
                     },
                 )
@@ -1623,6 +1625,8 @@ async fn run_sampling_request(
                 &step_context.settings.model_info.input_modalities,
                 &HistoryTrimConfig {
                     trim_success: step_context.turn.config.hide_tool_activity.trim_success,
+                    trim_failures: step_context.turn.config.hide_tool_activity.trim_failures,
+                    trim_warnings: step_context.turn.config.hide_tool_activity.trim_warnings,
                     trim_after: step_context.turn.config.hide_tool_activity.trim_after,
                 },
             )
