@@ -50,6 +50,7 @@ use codex_config::types::Notice;
 use codex_config::types::OAuthCredentialsStoreMode;
 use codex_config::types::ResumeCwdMode;
 use codex_config::types::SessionPickerViewMode;
+use codex_config::types::ToolActivity;
 use codex_config::types::ToolSuggestConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverable;
@@ -608,8 +609,11 @@ pub enum ThreadStoreConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HideToolActivityConfig {
     pub hide_failures: bool,
+    pub hide_warnings: bool,
     pub tool_error_log: Option<PathBuf>,
     pub trim_success: bool,
+    pub trim_failures: bool,
+    pub trim_warnings: bool,
     pub trim_after: Option<usize>,
 }
 
@@ -802,11 +806,14 @@ pub struct Config {
     /// Own the fullscreen transcript when the alternate screen is enabled.
     pub tui_fullscreen_transcript: bool,
 
-    /// Override the terminal-specific default for copying transcript mouse selections.
+<<    /// Override the terminal-specific default for copying transcript mouse selections.
     pub tui_copy_on_select: codex_config::types::CopyOnSelect,
 
     /// Right-click text paste fallback for the fullscreen TUI.
     pub tui_right_click_paste: codex_config::types::RightClickPaste,
+
+    /// QuietCodex tool-activity noise level (off/concise/quiet). Presentation-only.
+    pub tui_tool_activity: ToolActivity,
 
     /// Start the TUI in the specified collaboration mode (plan/default).
 
@@ -4421,8 +4428,11 @@ impl Config {
                 .as_ref()
                 .map(|value| HideToolActivityConfig {
                     hide_failures: value.hide_failures,
+                    hide_warnings: value.hide_warnings,
                     tool_error_log: value.tool_error_log.clone(),
                     trim_success: value.trim_success,
+                    trim_failures: value.trim_failures,
+                    trim_warnings: value.trim_warnings,
                     trim_after: value.trim_after,
                 })
                 .unwrap_or_default(),
@@ -4538,6 +4548,11 @@ impl Config {
                 .as_ref()
                 .map(|t| t.raw_output_mode)
                 .unwrap_or(false),
+            tui_tool_activity: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.tool_activity)
+                .unwrap_or_default(),
             tui_fullscreen_transcript: cfg
                 .tui
                 .as_ref()

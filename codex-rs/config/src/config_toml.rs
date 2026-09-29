@@ -164,9 +164,15 @@ pub struct FeatureToggleToml {
 pub struct HideToolActivityToml {
     #[serde(default)]
     pub hide_failures: bool,
+    #[serde(default)]
+    pub hide_warnings: bool,
     pub tool_error_log: Option<PathBuf>,
     #[serde(default)]
     pub trim_success: bool,
+    #[serde(default)]
+    pub trim_failures: bool,
+    #[serde(default)]
+    pub trim_warnings: bool,
     pub trim_after: Option<usize>,
 }
 

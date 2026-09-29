@@ -49,6 +49,7 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputContentItem;
+use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ImageDetail;
 use codex_protocol::models::ImageReference;
 use codex_protocol::models::ResponseItem;
@@ -234,6 +235,8 @@ impl Default for ContextManager {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct HistoryTrimConfig {
     pub trim_success: bool,
+    pub trim_failures: bool,
+    pub trim_warnings: bool,
     pub trim_after: Option<usize>,
 }
 
@@ -601,6 +604,8 @@ impl ContextManager {
         self.normalize_history(input_modalities);
         let mut items = Arc::unwrap_or_clone(self.items);
         trim_success_pairs(&mut items, cfg);
+        trim_failure_pairs(&mut items, cfg);
+        trim_warning_pairs(&mut items, cfg);
         items
             .into_iter()
             .map(ResponseItemEnvelope::into_item)
@@ -1443,6 +1448,147 @@ fn trim_success_pairs(items: &mut Vec<ResponseItemEnvelope>, cfg: &HistoryTrimCo
 
 fn is_goal_tool(name: &str) -> bool {
     matches!(name, "get_goal" | "create_goal" | "update_goal")
+}
+
+/// A7-TrimFail: same delayed-removal shape as `trim_success_pairs`, for failed
+/// pairs (`output.success == Some(false)`) instead of successful ones.
+fn trim_failure_pairs(items: &mut Vec<ResponseItemEnvelope>, cfg: &HistoryTrimConfig) {
+    let Some(keep_after) = cfg.trim_after else {
+        return;
+    };
+    if !cfg.trim_failures {
+        return;
+    }
+    let mut pending: HashMap<String, (usize, bool)> = HashMap::new();
+    let mut pairs: Vec<(usize, usize, Option<bool>)> = Vec::new();
+    for (index, envelope) in items.iter().enumerate() {
+        match &envelope.item {
+            ResponseItem::FunctionCall { call_id, name, .. }
+            | ResponseItem::CustomToolCall { call_id, name, .. } => {
+                pending.insert(call_id.clone(), (index, is_goal_tool(name)));
+            }
+            ResponseItem::FunctionCallOutput {
+                call_id: Some(call_id),
+                output,
+                ..
+            } => {
+                if let Some((call_index, excluded)) = pending.remove(call_id) {
+                    if !excluded {
+                        pairs.push((call_index, index, output.success));
+                    }
+                }
+            }
+            ResponseItem::FunctionCallOutput { call_id: None, .. } => {}
+            ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => {
+                if let Some((call_index, excluded)) = pending.remove(call_id) {
+                    if !excluded {
+                        pairs.push((call_index, index, output.success));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut eligible = pairs
+        .into_iter()
+        .filter(|(_, _, success)| *success == Some(false))
+        .collect::<Vec<_>>();
+    let remove_count = eligible.len().saturating_sub(keep_after);
+    let mut remove = HashSet::new();
+    for (call_index, output_index, _) in eligible.drain(..remove_count) {
+        remove.insert(call_index);
+        remove.insert(output_index);
+    }
+    let mut index = 0;
+    items.retain(|_| {
+        let keep = !remove.contains(&index);
+        index += 1;
+        keep
+    });
+}
+
+/// M135 A5/A8 warning-classification marker.
+///
+/// There is no dedicated "this tool result was a warning" state anywhere in the
+/// tool-result/history data model today: `FunctionCallOutputPayload.success` is
+/// strictly binary in practice (`Some(true)`/`Some(false)`, with `None` used as a
+/// generic "no verdict reported" default across many unrelated tool types, not as
+/// a warning signal), and the TUI's `WarningEntry`/`add_warning_message` path
+/// (traced through every call site: cyber-model notices, model-default fallback
+/// errors, skill-load diagnostics, working-directory notices, review-steer
+/// availability) only ever carries local UI notices, never a tool call's own
+/// result. So this is new, deliberately minimal, additive mechanism: a call
+/// counts as a "warning" only if it did not already fail (never reclassifies an
+/// A7 failure) and its own output text contains an explicit `"warning"` marker.
+/// It does not alter `trim_success_pairs`/A6 in any way.
+fn is_warning_output(output: &FunctionCallOutputPayload) -> bool {
+    output.success != Some(false)
+        && output
+            .body
+            .to_text()
+            .is_some_and(|text| text.to_ascii_lowercase().contains("warning"))
+}
+
+/// A8-TrimWarn: same delayed-removal shape as `trim_success_pairs`, for pairs
+/// flagged by `is_warning_output` instead of the plain success verdict.
+fn trim_warning_pairs(items: &mut Vec<ResponseItemEnvelope>, cfg: &HistoryTrimConfig) {
+    let Some(keep_after) = cfg.trim_after else {
+        return;
+    };
+    if !cfg.trim_warnings {
+        return;
+    }
+    let mut pending: HashMap<String, (usize, bool)> = HashMap::new();
+    let mut pairs: Vec<(usize, usize, bool)> = Vec::new();
+    for (index, envelope) in items.iter().enumerate() {
+        match &envelope.item {
+            ResponseItem::FunctionCall { call_id, name, .. }
+            | ResponseItem::CustomToolCall { call_id, name, .. } => {
+                pending.insert(call_id.clone(), (index, is_goal_tool(name)));
+            }
+            ResponseItem::FunctionCallOutput {
+                call_id: Some(call_id),
+                output,
+                ..
+            } => {
+                if let Some((call_index, excluded)) = pending.remove(call_id) {
+                    if !excluded {
+                        pairs.push((call_index, index, is_warning_output(output)));
+                    }
+                }
+            }
+            ResponseItem::FunctionCallOutput { call_id: None, .. } => {}
+            ResponseItem::CustomToolCallOutput {
+                call_id, output, ..
+            } => {
+                if let Some((call_index, excluded)) = pending.remove(call_id) {
+                    if !excluded {
+                        pairs.push((call_index, index, is_warning_output(output)));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut eligible = pairs
+        .into_iter()
+        .filter(|(_, _, is_warning)| *is_warning)
+        .map(|(call_index, output_index, _)| (call_index, output_index))
+        .collect::<Vec<_>>();
+    let remove_count = eligible.len().saturating_sub(keep_after);
+    let mut remove = HashSet::new();
+    for (call_index, output_index) in eligible.drain(..remove_count) {
+        remove.insert(call_index);
+        remove.insert(output_index);
+    }
+    let mut index = 0;
+    items.retain(|_| {
+        let keep = !remove.contains(&index);
+        index += 1;
+        keep
+    });
 }
 
 #[cfg(test)]
