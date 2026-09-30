@@ -2860,3 +2860,78 @@ async fn plain_completed_exec_without_warning_marker_is_never_hidden_by_hide_war
         .count();
     assert_eq!(inserted, 1);
 }
+
+// M135 A5/A8 false-positive narrowing: a clean run's own "0 warnings"/"no
+// warnings found" summary line must not itself trip `hide_warnings` - see
+// `contains_warning_marker` in `command_lifecycle.rs`.
+#[tokio::test]
+async fn hide_warnings_ignores_zero_warnings_summary_line() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.hide_tool_activity.hide_warnings = true;
+    let clean = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        id: "zero-warnings-call".to_string(),
+        command: "lint".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Completed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("Build succeeded. 0 warnings, 0 errors.".to_string()),
+        exit_code: Some(0),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(clean.clone());
+    chat.handle_command_execution_completed_now(clean, /*from_replay*/ false);
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(
+        inserted, 1,
+        "a clean '0 warnings' summary line must not be misclassified as a warning"
+    );
+}
+
+// Guards the narrowing above against under-matching: a real warning line
+// sitting next to an unrelated "0 warnings" summary line must still be
+// muted by `hide_warnings`.
+#[tokio::test]
+async fn hide_warnings_still_mutes_real_warning_next_to_zero_warnings_summary() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.hide_tool_activity.hide_warnings = true;
+    let mixed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        id: "mixed-warnings-call".to_string(),
+        command: "lint".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Completed,
+        command_actions: Vec::new(),
+        aggregated_output: Some(
+            "Warning: deprecated flag used\nBuild succeeded. 0 warnings, 0 errors.".to_string(),
+        ),
+        exit_code: Some(0),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(mixed.clone());
+    chat.handle_command_execution_completed_now(mixed, /*from_replay*/ false);
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(
+        inserted, 0,
+        "a real warning line elsewhere in the output must still be muted, even alongside an \
+         unrelated '0 warnings' summary line"
+    );
+}

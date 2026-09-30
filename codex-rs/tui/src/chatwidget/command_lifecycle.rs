@@ -57,8 +57,36 @@ fn append_v3_tool_line(
 /// rationale on `is_warning_output` in `core/src/context_manager/history.rs`
 /// (the A8 counterpart) for why this is new, additive mechanism rather than a
 /// reuse of an existing classification.
+///
+/// **False-positive narrowing (M135 gap-closure pass):** a plain substring
+/// check also matches a clean run's own "0 warnings"/"no warnings found"
+/// summary line, hiding output that reported nothing wrong. A line matching
+/// one of `ZERO_WARNING_PHRASES` does not itself count as the marker, but any
+/// *other* line in the same output that still contains "warning" does, so a
+/// real warning sitting next to an unrelated "0 warnings" summary is still
+/// caught. Kept behaviorally in sync with, but not code-shared with, the
+/// core crate's own copy (`is_warning_output` in
+/// `core/src/context_manager/history.rs`), matching how those two
+/// independent classifications are already duplicated across crates. This
+/// does not attempt every possible false-positive phrasing (e.g. reversed
+/// "warnings: 0") — narrowing further than the operator-cited examples would
+/// be inventing an unspecified heuristic, not closing the disclosed gap.
+const ZERO_WARNING_PHRASES: &[&str] = &[
+    "0 warnings",
+    "0 warning",
+    "no warnings",
+    "no warning",
+    "zero warnings",
+];
+
 fn contains_warning_marker(aggregated_output: &str) -> bool {
-    aggregated_output.to_ascii_lowercase().contains("warning")
+    aggregated_output.lines().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("warning")
+            && !ZERO_WARNING_PHRASES
+                .iter()
+                .any(|phrase| lower.contains(phrase))
+    })
 }
 
 impl ChatWidget {

@@ -3900,3 +3900,78 @@ fn trim_warning_pairs_excludes_plain_success_and_failure() {
         ResponseItem::FunctionCall { call_id, .. } if call_id == "failed"
     )));
 }
+
+// M135 A5/A8 false-positive narrowing: a clean run's own "0 warnings"/"no
+// warnings found" summary line must not itself trip `is_warning_output` -
+// see the same fix in the TUI's `contains_warning_marker`
+// (`tui/src/chatwidget/command_lifecycle.rs`).
+#[test]
+fn trim_warning_pairs_ignores_zero_warnings_summary_line() {
+    let mut items = trim_pair_with_text(
+        "clean",
+        "exec",
+        Some(true),
+        "Build succeeded. 0 warnings, 0 errors.",
+    );
+    items.extend(trim_pair_with_text(
+        "warned",
+        "exec",
+        Some(true),
+        "warning: low disk space",
+    ));
+
+    let output = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_failures: false,
+            trim_warnings: true,
+            trim_after: Some(0),
+        },
+    );
+    assert!(
+        output.iter().any(|item| matches!(
+            item,
+            ResponseItem::FunctionCall { call_id, .. } if call_id == "clean"
+        )),
+        "a clean '0 warnings' summary line must not be classified as a warning pair"
+    );
+    assert!(
+        output.iter().all(|item| !matches!(
+            item,
+            ResponseItem::FunctionCall { call_id, .. } if call_id == "warned"
+        )),
+        "a real warning pair must still be eligible for trimming"
+    );
+}
+
+// Guards the narrowing above against under-matching: a real warning line
+// sitting next to an unrelated "0 warnings" summary line in the *same*
+// output must still classify as a warning pair.
+#[test]
+fn trim_warning_pairs_still_matches_real_warning_next_to_zero_warnings_summary() {
+    let items = trim_pair_with_text(
+        "mixed",
+        "exec",
+        Some(true),
+        "Warning: deprecated flag used\nBuild succeeded. 0 warnings, 0 errors.",
+    );
+
+    let output = create_history_with_items(items).for_prompt_with_trim(
+        &default_input_modalities(),
+        &HistoryTrimConfig {
+            trim_success: false,
+            trim_failures: false,
+            trim_warnings: true,
+            trim_after: Some(0),
+        },
+    );
+    assert!(
+        output.iter().all(|item| !matches!(
+            item,
+            ResponseItem::FunctionCall { call_id, .. } if call_id == "mixed"
+        )),
+        "a real warning line elsewhere in the output must still classify as a warning pair, \
+         even alongside an unrelated '0 warnings' summary line"
+    );
+}
