@@ -2935,3 +2935,116 @@ async fn hide_warnings_still_mutes_real_warning_next_to_zero_warnings_summary() 
          unrelated '0 warnings' summary line"
     );
 }
+
+// M135 gap-closure: live-screen verification that A3/A5-muted rows are
+// actually invisible on the real rendered TUI transcript, not merely
+// represented that way in the internal event-count data model. `end_exec`
+// drives the exact same `handle_server_notification` -> render pipeline the
+// real app uses; `drain_insert_history` renders every `InsertHistoryCell`
+// cell through `display_lines(width)`, the same call the live compact-chat
+// transcript uses to draw a cell to the terminal. A muted call must
+// contribute zero lines to that rendered output while a sibling, non-muted
+// call's own output still appears in it.
+#[tokio::test]
+async fn hide_failures_muted_row_is_absent_from_the_rendered_transcript() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.hide_tool_activity.hide_failures = true;
+
+    // Visible sibling: an ordinary successful command, unaffected by
+    // hide_failures, driven through the same real completion pipeline.
+    let visible = begin_exec(&mut chat, "visible-call", "echo canary");
+    end_exec(
+        &mut chat,
+        visible,
+        "VISIBLE_CANARY_OUTPUT_MARKER",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    // Muted call: a failed result, which hide_failures must suppress
+    // entirely from the transcript.
+    let hidden = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        id: "hidden-failure-call".to_string(),
+        command: "false".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Failed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("HIDDEN_FAILURE_OUTPUT_MARKER".to_string()),
+        exit_code: Some(1),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(hidden.clone());
+    chat.handle_command_execution_completed_now(hidden, /*from_replay*/ false);
+
+    let rendered = drain_insert_history(&mut rx)
+        .into_iter()
+        .map(|lines| lines_to_single_string(&lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        rendered.contains("VISIBLE_CANARY_OUTPUT_MARKER"),
+        "the non-muted sibling command must still be drawn on the real transcript:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("HIDDEN_FAILURE_OUTPUT_MARKER"),
+        "a hide_failures-muted row must never appear in the rendered transcript output:\n{rendered}"
+    );
+}
+
+#[tokio::test]
+async fn hide_warnings_muted_row_is_absent_from_the_rendered_transcript() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.hide_tool_activity.hide_warnings = true;
+
+    // Visible sibling: an ordinary successful command with no warning
+    // marker, unaffected by hide_warnings.
+    let visible = begin_exec(&mut chat, "visible-call", "echo canary");
+    end_exec(
+        &mut chat,
+        visible,
+        "VISIBLE_CANARY_OUTPUT_MARKER",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    // Muted call: a successful result whose own output carries the warning
+    // marker, which hide_warnings must suppress entirely from the transcript.
+    let hidden = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        id: "hidden-warning-call".to_string(),
+        command: "lint".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Completed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("warning: HIDDEN_WARNING_OUTPUT_MARKER".to_string()),
+        exit_code: Some(0),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(hidden.clone());
+    chat.handle_command_execution_completed_now(hidden, /*from_replay*/ false);
+
+    let rendered = drain_insert_history(&mut rx)
+        .into_iter()
+        .map(|lines| lines_to_single_string(&lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        rendered.contains("VISIBLE_CANARY_OUTPUT_MARKER"),
+        "the non-muted sibling command must still be drawn on the real transcript:\n{rendered}"
+    );
+    assert!(
+        !rendered.contains("HIDDEN_WARNING_OUTPUT_MARKER"),
+        "a hide_warnings-muted row must never appear in the rendered transcript output:\n{rendered}"
+    );
+}
