@@ -837,14 +837,31 @@ async fn send_inter_agent_communication_without_turn_queues_message_without_trig
     ));
 }
 
-#[tokio::test]
-async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
-    check_v2_agent_reload(V2ReloadRoute::Sender).await;
+// `check_v2_agent_reload` drives a very deep, unboxed async call chain (spawn ->
+// ensure_v2_agent_loaded / ensure_multi_agent_v2_child_loaded -> ...), which produces an
+// oversized generator state that overflows the default `#[tokio::test]` thread stack under a
+// debug build (STATUS_STACK_OVERFLOW on Windows; see Foundry Issue I78). Run it on a thread
+// sized like the rest of Codex's async work instead of trying to shrink the call chain here.
+#[test]
+fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "ensure_v2_agent_loaded_reloads_registered_unloaded_agent",
+        || async {
+            check_v2_agent_reload(V2ReloadRoute::Sender).await;
+            Ok(())
+        },
+    )
 }
 
-#[tokio::test]
-async fn ensure_v2_child_loaded_preserves_evicted_parent_authority() {
-    check_v2_agent_reload(V2ReloadRoute::NestedParent).await;
+#[test]
+fn ensure_v2_child_loaded_preserves_evicted_parent_authority() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "ensure_v2_child_loaded_preserves_evicted_parent_authority",
+        || async {
+            check_v2_agent_reload(V2ReloadRoute::NestedParent).await;
+            Ok(())
+        },
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -1277,12 +1294,30 @@ impl ThreadInstructionsProvider for TestThreadInstructionsProvider {
     }
 }
 
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload` above
+// (see Foundry Issue I78): this fixture also drives spawn -> ensure_multi_agent_v2_child_loaded
+// through an unboxed async call chain, so it needs the larger test thread stack too.
 #[test_case::test_case(false, false; "snapshot")]
 #[test_case::test_case(true, false; "shared")]
 #[test_case::test_case(false, true; "unshared_grandchild_without_loaded_parent")]
 #[test_case::test_case(true, true; "shared_grandchild_without_loaded_parent")]
-#[tokio::test]
-async fn cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritance(
+fn cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritance(
+    shared: bool,
+    nested: bool,
+) -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritance",
+        move || async move {
+            cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritance_inner(
+                shared, nested,
+            )
+            .await;
+            Ok(())
+        },
+    )
+}
+
+async fn cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritance_inner(
     shared: bool,
     nested: bool,
 ) {
