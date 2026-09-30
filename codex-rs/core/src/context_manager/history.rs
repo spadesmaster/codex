@@ -1381,12 +1381,45 @@ fn trim_failure_pairs(items: &mut Vec<ResponseItemEnvelope>, cfg: &HistoryTrimCo
 /// counts as a "warning" only if it did not already fail (never reclassifies an
 /// A7 failure) and its own output text contains an explicit `"warning"` marker.
 /// It does not alter `trim_success_pairs`/A6 in any way.
+///
+/// **False-positive narrowing (M135 gap-closure pass):** the plain
+/// case-insensitive substring check below misclassifies a clean run whose own
+/// output merely reports that it had no warnings (a linter's own "0 warnings"
+/// summary line, "no warnings found", etc.) as if it were a real warning.
+/// `line_is_zero_warning_summary` excludes exactly that narrow, well-known
+/// shape, line by line: a line matching one of `ZERO_WARNING_PHRASES` does
+/// not itself count as the marker, but any *other* line in the same output
+/// that still contains "warning" does — so a real warning next to an
+/// unrelated "0 warnings" summary is still caught. This does not attempt to
+/// cover every possible false-positive phrasing (e.g. "warnings: 0" in
+/// reversed order is not matched) — narrowing further than these
+/// operator-cited examples would be inventing an unspecified heuristic, not
+/// closing the disclosed gap.
 fn is_warning_output(output: &FunctionCallOutputPayload) -> bool {
     output.success != Some(false)
-        && output
-            .body
-            .to_text()
-            .is_some_and(|text| text.to_ascii_lowercase().contains("warning"))
+        && output.body.to_text().is_some_and(|text| {
+            text.lines()
+                .any(|line| line_has_warning_marker(&line.to_ascii_lowercase()))
+        })
+}
+
+/// Shared by `is_warning_output` above; kept in sync with the TUI's own copy
+/// in `codex-rs/tui/src/chatwidget/command_lifecycle.rs` (`contains_warning_marker`)
+/// rather than factored into one place, matching how those two independent
+/// classifications are already duplicated across the two crates.
+const ZERO_WARNING_PHRASES: &[&str] = &[
+    "0 warnings",
+    "0 warning",
+    "no warnings",
+    "no warning",
+    "zero warnings",
+];
+
+fn line_has_warning_marker(lowercase_line: &str) -> bool {
+    lowercase_line.contains("warning")
+        && !ZERO_WARNING_PHRASES
+            .iter()
+            .any(|phrase| lowercase_line.contains(phrase))
 }
 
 /// A8-TrimWarn: same delayed-removal shape as `trim_success_pairs`, for pairs
