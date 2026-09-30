@@ -74,6 +74,7 @@ impl LocalSettings {
                 vim_mode_default: config.tui_vim_mode_default,
                 question_esc_back: config.tui_question_esc_back,
                 raw_output_mode: config.tui_raw_output_mode,
+                tool_activity: config.tui_tool_activity,
                 fullscreen_transcript: config.tui_fullscreen_transcript,
                 copy_on_select: config.tui_copy_on_select,
                 right_click_paste: config.tui_right_click_paste,

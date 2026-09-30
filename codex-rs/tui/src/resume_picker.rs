@@ -25,6 +25,7 @@ use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
 use crate::text_formatting::truncate_text;
 use crate::thread_transcript::RawReasoningVisibility;
+use crate::thread_transcript::ToolActivityVisibility;
 use crate::thread_transcript::TranscriptCells;
 use crate::thread_transcript::load_session_transcript;
 use crate::tui::FrameRequester;
@@ -737,11 +738,22 @@ fn spawn_app_server_page_loader(
                     thread_id,
                     cancellation,
                 } => {
+                    // QuietCodex: derive visibility from the effective config for this lazy
+                    // persisted-transcript load; there is no live ChatWidget instance here yet.
+                    let tool_activity_visibility = config
+                        .as_ref()
+                        .map(|c| {
+                            crate::thread_transcript::ToolActivityVisibility::from(
+                                c.tui_tool_activity,
+                            )
+                        })
+                        .unwrap_or(ToolActivityVisibility::Shown);
                     tokio::select! {
                         transcript = load_session_transcript(
                             &mut app_server,
                             thread_id,
                             raw_reasoning_visibility,
+                            tool_activity_visibility,
                             config.as_ref(),
                         ) => {
                             let _ = bg_tx.send(BackgroundEvent::Transcript {
@@ -6755,6 +6767,7 @@ session_picker_view = "dense"
         let rendered = thread_to_transcript_cells(
             thread,
             RawReasoningVisibility::Visible,
+            ToolActivityVisibility::Shown,
             /*config*/ None,
         )
         .into_iter()
@@ -6825,6 +6838,7 @@ session_picker_view = "dense"
         let hidden = thread_to_transcript_cells(
             thread.clone(),
             RawReasoningVisibility::Hidden,
+            ToolActivityVisibility::Shown,
             /*config*/ None,
         )
         .into_iter()
@@ -6835,6 +6849,7 @@ session_picker_view = "dense"
         let visible = thread_to_transcript_cells(
             thread,
             RawReasoningVisibility::Visible,
+            ToolActivityVisibility::Shown,
             /*config*/ None,
         )
         .into_iter()
@@ -6903,6 +6918,7 @@ session_picker_view = "dense"
         let rendered = thread_to_transcript_cells(
             thread,
             RawReasoningVisibility::Visible,
+            ToolActivityVisibility::Shown,
             /*config*/ None,
         )
         .into_iter()

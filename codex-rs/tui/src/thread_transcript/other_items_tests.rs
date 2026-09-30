@@ -1,5 +1,6 @@
 //! Persisted tool projections retain rich detail, styles, and truthful outcomes.
 
+use super::ToolActivityVisibility;
 use super::cells;
 use crate::diff_model::FileChange;
 use crate::history_cell;
@@ -73,6 +74,7 @@ fn completed_patch_restores_rich_diff_and_styles() {
             status: PatchApplyStatus::Completed,
         },
         &cwd,
+        ToolActivityVisibility::Shown,
     );
 
     assert_eq!(actual.len(), 1);
@@ -103,6 +105,7 @@ fn unfinished_and_rejected_patches_keep_their_outcome() {
                 status,
             },
             &cwd,
+            ToolActivityVisibility::Shown,
         )
     })
     .flat_map(|cell| cell.display_lines(/*width*/ 80))
@@ -170,7 +173,7 @@ fn tool_and_notice_projection_uses_normal_transcript_presentation() {
     ];
     let rendered = items
         .into_iter()
-        .flat_map(|item| cells(item, &cwd))
+        .flat_map(|item| cells(item, &cwd, ToolActivityVisibility::Shown))
         .flat_map(|cell| cell.display_lines(/*width*/ 80))
         .map(|line| line.to_string())
         .collect::<Vec<_>>()

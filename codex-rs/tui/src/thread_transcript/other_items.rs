@@ -3,21 +3,32 @@
 //! Formatting stays in the same history cells used by live events. Only completed
 //! patches render as applied changes; other statuses retain their actual outcome.
 
+use super::ToolActivityVisibility;
 use super::TranscriptCells;
 use crate::app_server_approval_conversions::file_update_changes_to_display;
 use crate::history_cell;
 use crate::history_cell::PlainHistoryCell;
 use crate::multi_agents;
+use codex_app_server_protocol::CollabAgentToolCallStatus;
+use codex_app_server_protocol::DynamicToolCallStatus;
 use codex_app_server_protocol::PatchApplyStatus;
+use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::WebSearchAction;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use ratatui::style::Stylize as _;
 use std::sync::Arc;
 
-pub(super) fn cells(item: ThreadItem, cwd: &AbsolutePathBuf) -> TranscriptCells {
+pub(super) fn cells(
+    item: ThreadItem,
+    cwd: &AbsolutePathBuf,
+    tool_activity_visibility: ToolActivityVisibility,
+) -> TranscriptCells {
+    let hidden = tool_activity_visibility != ToolActivityVisibility::Shown;
     let mut cells: TranscriptCells = Vec::new();
     match item {
+        ThreadItem::FileChange { ref status, .. }
+            if hidden && !matches!(status, PatchApplyStatus::Failed) => {}
         ThreadItem::FileChange {
             id,
             changes,
@@ -50,14 +61,17 @@ pub(super) fn cells(item: ThreadItem, cwd: &AbsolutePathBuf) -> TranscriptCells 
                 )));
             }
         },
+        ThreadItem::WebSearch(_) if hidden => {}
         ThreadItem::WebSearch(item) => cells.push(Arc::new(history_cell::new_web_search_call(
             item.id,
             item.query,
             item.action.unwrap_or(WebSearchAction::Other),
         ))),
+        ThreadItem::ImageView { .. } if hidden => {}
         ThreadItem::ImageView { path, .. } => {
             cells.push(Arc::new(history_cell::new_view_image_tool_call(path)))
         }
+        ThreadItem::ImageGeneration(item) if hidden && item.status.as_str() != "failed" => {}
         ThreadItem::ImageGeneration(item)
             if !matches!(item.status.as_str(), "completed" | "failed") =>
         {
@@ -79,6 +93,8 @@ pub(super) fn cells(item: ThreadItem, cwd: &AbsolutePathBuf) -> TranscriptCells 
                 item.saved_path,
             )));
         }
+        ThreadItem::CollabAgentToolCall { ref status, .. }
+            if hidden && matches!(status, CollabAgentToolCallStatus::Completed) => {}
         item @ ThreadItem::CollabAgentToolCall { .. } => {
             if let Some(cell) = multi_agents::tool_call_history_cell(
                 &item,
@@ -88,6 +104,8 @@ pub(super) fn cells(item: ThreadItem, cwd: &AbsolutePathBuf) -> TranscriptCells 
                 cells.push(Arc::new(cell));
             }
         }
+        ThreadItem::SubAgentActivity { kind, .. }
+            if hidden && !matches!(kind, SubAgentActivityKind::Interrupted) => {}
         item @ ThreadItem::SubAgentActivity { .. } => {
             if let Some(cell) = multi_agents::sub_agent_activity_history_cell(&item) {
                 cells.push(Arc::new(cell));
@@ -126,6 +144,8 @@ pub(super) fn cells(item: ThreadItem, cwd: &AbsolutePathBuf) -> TranscriptCells 
                 )));
             }
         }
+        ThreadItem::DynamicToolCall { ref status, .. }
+            if hidden && !matches!(status, DynamicToolCallStatus::Failed) => {}
         item @ ThreadItem::DynamicToolCall { .. } => {
             if let Some(cell) = history_cell::DynamicToolCallCell::from_item(item) {
                 cells.push(Arc::new(cell));

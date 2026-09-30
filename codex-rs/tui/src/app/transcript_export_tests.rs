@@ -225,6 +225,7 @@ fn persisted_web_and_image_activity_preserves_full_details() {
         &codex_utils_absolute_path::AbsolutePathBuf::current_dir().expect("cwd"),
         items,
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         /*config*/ None,
     );
     insta::assert_snapshot!(render_markdown_transcript(&cells).expect("exported transcript"));

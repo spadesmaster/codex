@@ -3816,6 +3816,7 @@ requires_openai_auth = {requires_openai_auth}
                 &mut app_server,
                 thread_id,
                 crate::thread_transcript::RawReasoningVisibility::Hidden,
+                crate::thread_transcript::ToolActivityVisibility::Shown,
                 /*config*/ None,
             )
             .await?;

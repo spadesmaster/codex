@@ -38,6 +38,7 @@ const SIDE_SLASH_COMMAND_UNAVAILABLE_HINT: &str =
     "Press Ctrl+C to return to the main thread first.";
 const GOAL_USAGE_HINT: &str = "Example: /goal improve benchmark coverage";
 const RAW_USAGE: &str = "Usage: /raw [on|off]";
+const TOOL_ACTIVITY_USAGE: &str = "Usage: /tool-activity off|concise|quiet|status";
 const USAGE_CHATGPT_LOGIN_REQUIRED: &str = "Sign in with ChatGPT to use /usage.";
 
 impl ChatWidget {
@@ -464,6 +465,13 @@ impl ChatWidget {
                 let enabled = self.toggle_raw_output_mode_and_notify();
                 self.emit_raw_output_mode_changed(enabled);
             }
+            SlashCommand::ToolActivity => {
+                // Bare `/tool-activity` reports current state without mutating it.
+                self.add_info_message(
+                    Self::tool_activity_notice(self.tool_activity_level()).to_string(),
+                    /*hint*/ None,
+                );
+            }
             SlashCommand::Tui => self.show_tui_mode_picker(),
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
@@ -832,6 +840,18 @@ impl ChatWidget {
                     self.emit_raw_output_mode_changed(/*enabled*/ false);
                 }
                 _ => self.add_error_message(RAW_USAGE.to_string()),
+            },
+            SlashCommand::ToolActivity => match trimmed.to_ascii_lowercase().as_str() {
+                "off" => self.set_tool_activity_level_and_notify(ToolActivity::Off),
+                "concise" => self.set_tool_activity_level_and_notify(ToolActivity::Concise),
+                "quiet" => self.set_tool_activity_level_and_notify(ToolActivity::Quiet),
+                "status" | "" => {
+                    self.add_info_message(
+                        Self::tool_activity_notice(self.tool_activity_level()).to_string(),
+                        /*hint*/ None,
+                    );
+                }
+                _ => self.add_error_message(TOOL_ACTIVITY_USAGE.to_string()),
             },
             SlashCommand::Rename if !trimmed.is_empty() => {
                 if !self.ensure_thread_rename_allowed() {
@@ -1224,6 +1244,7 @@ impl ChatWidget {
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::ToolActivity
             | SlashCommand::Vim
             | SlashCommand::Diff
             | SlashCommand::App

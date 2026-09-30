@@ -14,6 +14,10 @@ async fn image_result_live_and_replay_render_in_the_owning_call() {
     let mut outputs = Vec::new();
     for replay in [false, true] {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        // QuietCodex: this test compares live vs. replay rendering of a routine successful MCP
+        // call, which the default ToolActivity::Quiet level now hides entirely. Show tool
+        // activity so the comparison still exercises the rendering path it was written for.
+        chat.set_tool_activity_level(codex_config::types::ToolActivity::Off);
         if replay {
             chat.replay_thread_item(item.clone(), "turn-1".into(), ReplayKind::ThreadSnapshot);
         } else {

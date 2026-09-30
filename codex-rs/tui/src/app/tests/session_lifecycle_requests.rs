@@ -2063,6 +2063,7 @@ async fn older_pagination_reconciles_review_prompts_across_page_boundaries() -> 
         &app.config.cwd,
         started.turns.iter().flat_map(|turn| turn.items.clone()),
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         Some(&app.config),
     );
     app.enqueue_primary_thread_session(started.session, started.turns)
@@ -2236,6 +2237,7 @@ async fn transcript_alt_beginning_loads_every_older_history_page() -> Result<()>
         &app.config.cwd,
         started.turns.iter().flat_map(|turn| turn.items.clone()),
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         Some(&app.config),
     );
     app.enqueue_primary_thread_session(started.session, started.turns)
@@ -2648,6 +2650,7 @@ async fn underfilled_scrollback_fetches_older_pages_without_opening_the_transcri
         &app.config.cwd,
         started.turns.iter().flat_map(|turn| turn.items.clone()),
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         Some(&app.config),
     );
     initial_cells.insert(
@@ -2794,6 +2797,7 @@ async fn paginated_workflows_never_request_full_thread_history() -> Result<()> {
         &mut app_server,
         paginated_thread_id,
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         Some(&app.config),
     )
     .await?;
@@ -2840,6 +2844,7 @@ async fn paginated_workflows_never_request_full_thread_history() -> Result<()> {
         &mut app_server,
         legacy_thread_id,
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         Some(&app.config),
     )
     .await?;
@@ -3199,6 +3204,7 @@ async fn cold_paginated_subagent_transcript_excludes_inherited_parent_history() 
         &mut app_server,
         child_thread_id,
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         Some(&app.config),
     )
     .await?;

@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::thread_transcript::RawReasoningVisibility;
+use crate::thread_transcript::ToolActivityVisibility;
 use crate::thread_transcript::TranscriptCells;
 use crate::thread_transcript::thread_items_to_transcript_cells;
 use codex_app_server_protocol::ThreadItem;
@@ -39,6 +40,7 @@ fn project(items: &[ThreadItem]) -> TranscriptCells {
         &AbsolutePathBuf::current_dir().unwrap(),
         items.to_vec(),
         RawReasoningVisibility::Hidden,
+        ToolActivityVisibility::Shown,
         /*config*/ None,
     )
 }

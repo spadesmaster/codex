@@ -130,6 +130,7 @@ async fn hidden_last_item_keeps_turn_groups_and_completion_boundaries() {
             thread_id,
             &cwd,
             RawReasoningVisibility::Hidden,
+            crate::thread_transcript::ToolActivityVisibility::Shown,
         );
         let groups = cells
             .iter()
@@ -163,6 +164,7 @@ async fn hidden_last_item_keeps_turn_groups_and_completion_boundaries() {
             thread_id,
             &cwd,
             RawReasoningVisibility::Hidden,
+            crate::thread_transcript::ToolActivityVisibility::Shown,
         );
         assert_eq!(
             repeated
@@ -249,6 +251,7 @@ async fn browsing_waits_for_a_prompt_outside_the_initial_history_window() -> Res
         ThreadId::new(),
         &app.config.cwd.clone(),
         RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
     );
     assert!(!app.backtrack.overlay_preview_active);
     assert_eq!(
