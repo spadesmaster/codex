@@ -63,6 +63,10 @@ pub(super) struct TranscriptState {
     pub(super) plan_delta_buffer: String,
     /// True while a plan item is streaming.
     pub(super) plan_item_active: bool,
+    /// QuietCodex: set whenever a tool-activity completion was processed but its transcript cell
+    /// was suppressed by the current `ToolActivity` level. Presentation-only bookkeeping so a
+    /// hidden completion is still distinguishable from one that never happened.
+    pub(super) had_work_activity: bool,
 }
 
 impl TranscriptState {

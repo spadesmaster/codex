@@ -211,6 +211,7 @@ async fn beginning_navigation_holds_the_view_until_the_last_page_arrives() -> Re
             &app.config.cwd,
             started.turns.iter().flat_map(|turn| turn.items.clone()),
             crate::thread_transcript::RawReasoningVisibility::Hidden,
+            crate::thread_transcript::ToolActivityVisibility::Shown,
             Some(&app.config),
         );
         app.enqueue_primary_thread_session(started.session, started.turns)
@@ -331,6 +332,7 @@ async fn returning_to_latest_retains_pending_pages_without_continuing_to_the_beg
         &app.config.cwd,
         started.turns.iter().flat_map(|turn| turn.items.clone()),
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         Some(&app.config),
     );
     app.enqueue_primary_thread_session(started.session, started.turns)

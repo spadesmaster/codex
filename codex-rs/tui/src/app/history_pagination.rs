@@ -104,8 +104,21 @@ impl App {
         } else {
             RawReasoningVisibility::Hidden
         };
+        // QuietCodex: use the LIVE ChatWidget toggles (not just the static config), so an
+        // in-session `/tool-activity` change is reflected in subsequently loaded older pages.
+        let tool_activity_visibility = crate::thread_transcript::ToolActivityVisibility::from(
+            self.chat_widget.tool_activity_level(),
+        );
         let width = tui.terminal.last_known_screen_size.width;
-        self.remove_hidden_review_cells(tui, &turns, &hidden_item_ids, thread_id, &cwd, visibility);
+        self.remove_hidden_review_cells(
+            tui,
+            &turns,
+            &hidden_item_ids,
+            thread_id,
+            &cwd,
+            visibility,
+            tool_activity_visibility,
+        );
         let cells = self.project_older_history_cells(
             items,
             &turns,
@@ -113,6 +126,7 @@ impl App {
             thread_id,
             &cwd,
             visibility,
+            tool_activity_visibility,
         );
         let inserted = self.prepend_older_transcript_cells(cells);
         self.transcript_view
@@ -150,6 +164,7 @@ impl App {
         thread_id: ThreadId,
         cwd: &AbsolutePathBuf,
         visibility: RawReasoningVisibility,
+        tool_activity_visibility: crate::thread_transcript::ToolActivityVisibility,
     ) {
         if hidden_item_ids.is_empty() {
             return;
@@ -165,6 +180,7 @@ impl App {
             cwd,
             user_items.iter().map(|(_, item)| item.clone()),
             visibility,
+            tool_activity_visibility,
             Some(&self.config),
         );
         let persisted_user_cells = user_items
@@ -224,6 +240,7 @@ impl App {
         thread_id: ThreadId,
         cwd: &AbsolutePathBuf,
         visibility: RawReasoningVisibility,
+        tool_activity_visibility: crate::thread_transcript::ToolActivityVisibility,
     ) -> Vec<Arc<dyn HistoryCell>> {
         let mut cells = Vec::new();
         for (items, completed_turn) in completion::group_completed_turn_items(items, turns) {
@@ -234,6 +251,7 @@ impl App {
                     cwd,
                     visible.iter().cloned(),
                     visibility,
+                    tool_activity_visibility,
                     Some(&self.config),
                 ));
             }

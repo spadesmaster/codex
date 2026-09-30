@@ -740,6 +740,20 @@ pub struct ModelAvailabilityNuxConfig {
 /// Fallback resize-reflow row cap when Codex cannot identify a terminal-specific scrollback size.
 pub const DEFAULT_TERMINAL_RESIZE_REFLOW_FALLBACK_MAX_ROWS: usize = 1_000;
 
+/// Tool-activity presentation level. The default is intentionally quiet for new and upgrading
+/// users; see `Tui::tool_activity` for the exact per-level contract.
+#[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolActivity {
+    /// Show all tool activity, including routine successful calls.
+    Off,
+    /// Hide routine successful activity only; failures/errors/approval records still show.
+    Concise,
+    /// Quiet default: routine tool activity is hidden while safety-relevant records remain visible.
+    #[default]
+    Quiet,
+}
+
 /// Collection of settings that are specific to the TUI.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
@@ -802,6 +816,13 @@ pub struct Tui {
     /// Defaults to `true`; alternate-screen restrictions take precedence.
     #[serde(default = "default_true")]
     pub fullscreen_transcript: bool,
+
+    /// Tool-activity presentation level:
+    /// - `off`: show all tool activity, including routine successful calls.
+    /// - `concise` and `quiet`: hide routine successful activity while preserving failures,
+    ///   warnings, approvals, declines, control records, and user-authored content.
+    #[serde(default)]
+    pub tool_activity: ToolActivity,
 
     /// Controls whether the TUI uses the terminal's alternate screen buffer.
     ///

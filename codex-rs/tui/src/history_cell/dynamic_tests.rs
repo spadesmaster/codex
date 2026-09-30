@@ -4,6 +4,7 @@ use super::*;
 use crate::test_support::PathBufExt;
 use crate::test_support::test_path_buf;
 use crate::thread_transcript::RawReasoningVisibility;
+use crate::thread_transcript::ToolActivityVisibility;
 use crate::thread_transcript::thread_items_to_transcript_cells;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -48,6 +49,7 @@ fn dynamic_status_and_output_match_persisted_presentations() {
             &cwd,
             [item(status, output)],
             RawReasoningVisibility::Hidden,
+            ToolActivityVisibility::Shown,
             /*config*/ None,
         );
         assert_eq!(replayed.len(), 1);

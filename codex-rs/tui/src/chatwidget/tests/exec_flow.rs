@@ -2788,6 +2788,47 @@ async fn hidden_warning_agent_exec_logs_once_with_yellow_severity() {
 }
 
 #[tokio::test]
+async fn hide_warnings_wins_over_concise_summary_during_replay() {
+    // M26's `tool_activity` enum (a separate, uncommitted track in this same working tree) short-
+    // circuits to a concise summary for a `from_replay` routine-success item when the level is not
+    // `Off` (see `should_render_exec_activity`/`handle_command_execution_completed_now`'s early
+    // returns in command_lifecycle.rs). A warning-marked item is ALSO a `Completed`-status "routine
+    // success" by that check's own definition, so operator direction 2026-09-29 flagged a real risk:
+    // does A5's hide_warnings actually win over M26's concise-summary path during replay, or does
+    // M26's own early return fire first and show it anyway? This proves the answer directly.
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.hide_tool_activity.hide_warnings = true;
+    chat.set_tool_activity_level(ToolActivity::Concise);
+    let warned = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        id: "replay-warn".to_string(),
+        command: "printf warn".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Completed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("Warning: deprecated flag used".to_string()),
+        exit_code: Some(0),
+        duration_ms: Some(5),
+    };
+    chat.handle_command_execution_completed_now(warned, /*from_replay*/ true);
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(
+        inserted, 0,
+        "hide_warnings must suppress a warning-marked completed result even when replayed under \
+         a non-Off tool_activity level - A5's own config, not M26's, must govern warning visibility"
+    );
+}
+
+#[tokio::test]
 async fn plain_completed_exec_without_warning_marker_is_never_hidden_by_hide_warnings() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.hide_tool_activity.hide_warnings = true;

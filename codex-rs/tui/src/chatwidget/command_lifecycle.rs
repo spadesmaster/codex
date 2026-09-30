@@ -457,14 +457,35 @@ impl ChatWidget {
             status,
             codex_app_server_protocol::CommandExecutionStatus::Completed
         );
-        if from_replay && !self.should_render_exec_activity(source) && routine_success {
+        // A5-HideWarn precedence fix (2026-09-29, operator-direct: "write a test proving A5's
+        // hide_warnings works during replay"): a warning-marked result is ALSO `routine_success`
+        // by the definition above (both require `status == Completed`), so it could otherwise take
+        // the M26 `tool_activity` shortcuts immediately below - showing a concise summary from a
+        // DIFFERENT, independent config surface - before ever reaching A5's own `hide_warnings`
+        // check further down. Computed here, using the still-unshadowed incoming `source`/
+        // `aggregated_output` (the `let (command, parsed, source) = match running {...}` rebinding
+        // a few lines down would otherwise change which `source` is in scope), specifically to keep
+        // A5's own configured intent from being silently overridden by an unrelated mechanism.
+        // Confirmed as a real, live bug (not just a theoretical interaction) by
+        // `hide_warnings_wins_over_concise_summary_during_replay` in tests/exec_flow.rs, which
+        // failed before this fix and passes after it.
+        let warning_marked_early = !is_unified_exec_source(source)
+            && source != ExecCommandSource::UserShell
+            && routine_success
+            && contains_warning_marker(&aggregated_output);
+        let warning_hidden_early = warning_marked_early && self.config.hide_tool_activity.hide_warnings;
+        if from_replay
+            && !self.should_render_exec_activity(source)
+            && routine_success
+            && !warning_hidden_early
+        {
             if self.tool_activity == ToolActivity::Concise {
                 self.add_concise_exec_summary(&event_command);
             }
             self.transcript.had_work_activity = true;
             return;
         }
-        if was_hidden && routine_success {
+        if was_hidden && routine_success && !warning_hidden_early {
             if self.tool_activity == ToolActivity::Concise {
                 self.add_concise_exec_summary(&event_command);
             }

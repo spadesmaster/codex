@@ -928,6 +928,7 @@ async fn desktop_async_answer_dismisses_only_its_question_and_preserves_the_othe
             &chat.config.cwd,
             [item],
             crate::thread_transcript::RawReasoningVisibility::Hidden,
+            crate::thread_transcript::ToolActivityVisibility::Shown,
             /*config*/ None,
         );
         insta::assert_snapshot!(

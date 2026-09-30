@@ -23,6 +23,12 @@ pub(super) async fn test_config() -> Config {
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
     config.config_layer_stack = ConfigLayerStack::default();
     config.startup_warnings.clear();
+    // QuietCodex: production defaults to `ToolActivity::Quiet` (hiding routine tool activity),
+    // but the wide pre-existing test suite across this crate was written expecting full
+    // visibility of exec/MCP/patch/image cells. Pin tests to `Off` here so those tests keep
+    // seeing the detail they assert on; tests that specifically exercise `Concise`/`Quiet`
+    // hiding (see `chatwidget/tests/tool_activity_visibility.rs`) set the level explicitly.
+    config.tui_tool_activity = codex_config::types::ToolActivity::Off;
     config
 }
 

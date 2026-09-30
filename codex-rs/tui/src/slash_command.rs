@@ -47,6 +47,7 @@ pub enum SlashCommand {
     Copy,
     Export,
     Raw,
+    ToolActivity,
     Tui,
     Diff,
     Mention,
@@ -107,6 +108,7 @@ impl SlashCommand {
             SlashCommand::Copy => "copy the last response or part of it",
             SlashCommand::Export => "export the conversation as markdown",
             SlashCommand::Raw => "toggle raw scrollback mode for copy-friendly terminal selection",
+            SlashCommand::ToolActivity => "set agent tool-activity noise level (off/concise/quiet)",
             SlashCommand::Tui => "choose the TUI mode for the next launch",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
@@ -179,6 +181,7 @@ impl SlashCommand {
                 | SlashCommand::Mcp
                 | SlashCommand::Export
                 | SlashCommand::Raw
+                | SlashCommand::ToolActivity
                 | SlashCommand::Cd
                 | SlashCommand::Pwd
                 | SlashCommand::Usage
@@ -267,6 +270,7 @@ impl SlashCommand {
             | SlashCommand::Permissions
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::ToolActivity
             | SlashCommand::Rename
             | SlashCommand::Mention
             | SlashCommand::Skills

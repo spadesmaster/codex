@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::thread_transcript::RawReasoningVisibility;
+use crate::thread_transcript::ToolActivityVisibility;
 use crate::thread_transcript::thread_items_to_transcript_cells;
 use codex_app_server_protocol::McpToolCallResult;
 use codex_app_server_protocol::McpToolCallStatus;
@@ -114,6 +115,7 @@ async fn older_tool_projection_matches_initial_replay() {
         &chat.config.cwd,
         items.clone(),
         RawReasoningVisibility::Hidden,
+        ToolActivityVisibility::Shown,
         Some(&chat.config),
     );
     chat.replay_thread_turns(
@@ -196,6 +198,7 @@ async fn snapshot_formatter_reasoning_matches_compact_and_detailed_replay() {
             &chat.config.cwd,
             [item.clone()],
             visibility,
+            ToolActivityVisibility::Shown,
             Some(&chat.config),
         );
         chat.replay_thread_item(item.clone(), "turn".to_string(), ReplayKind::ThreadSnapshot);
@@ -254,6 +257,7 @@ fn raw_reasoning_keeps_its_own_heading() {
             content: vec!["**Raw investigation**\nKeep this heading and its details.".into()],
         }],
         RawReasoningVisibility::Visible,
+        ToolActivityVisibility::Shown,
         /*config*/ None,
     );
     insta::assert_snapshot!(lines_to_single_string(&projected[0].transcript_lines(/*width*/ 80)), @"
@@ -276,6 +280,7 @@ async fn snapshot_formatter_completed_patch_needs_no_started_notification() {
             &chat.config.cwd,
             [item.clone()],
             RawReasoningVisibility::Hidden,
+            ToolActivityVisibility::Shown,
             Some(&chat.config),
         );
         chat.replay_thread_item(item, "turn".to_string(), replay_kind);

@@ -309,6 +309,7 @@ async fn replayed_delegated_tool_output_is_attributed_without_seeding_composer_h
         &chat.config.cwd,
         [item],
         crate::thread_transcript::RawReasoningVisibility::Hidden,
+        crate::thread_transcript::ToolActivityVisibility::Shown,
         /*config*/ None,
     );
     assert_eq!(

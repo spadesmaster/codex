@@ -392,6 +392,7 @@ fn folding_a_reasoning_only_page_retains_its_find_and_copy_revision() {
             &codex_utils_absolute_path::AbsolutePathBuf::current_dir().unwrap(),
             items.iter().cloned(),
             RawReasoningVisibility::Hidden,
+            crate::thread_transcript::ToolActivityVisibility::Shown,
             /*config*/ None,
         )
     };

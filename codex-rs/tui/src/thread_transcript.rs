@@ -19,6 +19,7 @@ use crate::legacy_core::config::Config;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::UserInput;
+use codex_config::types::ToolActivity;
 use codex_protocol::ThreadId;
 use codex_protocol::items::UserMessageItem;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -65,10 +66,58 @@ pub(crate) enum RawReasoningVisibility {
     Visible,
 }
 
+/// QuietCodex: whether persisted-transcript conversion should omit routine tool/exec fallback
+/// cells. Independent of `RawReasoningVisibility` — this only ever affects `fallback_transcript_cell`.
+///
+/// `Hidden` omits routine successful activity only; Failed/Declined status and other
+/// error/failure surfaces stay visible for both `ToolActivity::Concise` and `ToolActivity::Quiet`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ToolActivityVisibility {
+    Shown,
+    Hidden,
+}
+
+impl From<ToolActivity> for ToolActivityVisibility {
+    fn from(level: ToolActivity) -> Self {
+        match level {
+            ToolActivity::Off => Self::Shown,
+            ToolActivity::Concise => Self::Hidden,
+            ToolActivity::Quiet => Self::Hidden,
+        }
+    }
+}
+
+/// QuietCodex: routine (non-failure) `CommandExecution` items are hideable at persisted-transcript
+/// render time; user-run shell commands and Failed/Declined status always stay visible.
+fn is_hidden_command_execution(
+    source: &codex_app_server_protocol::CommandExecutionSource,
+    status: &codex_app_server_protocol::CommandExecutionStatus,
+    visibility: ToolActivityVisibility,
+) -> bool {
+    visibility != ToolActivityVisibility::Shown
+        && *source != codex_app_server_protocol::CommandExecutionSource::UserShell
+        && !matches!(
+            status,
+            codex_app_server_protocol::CommandExecutionStatus::Failed
+                | codex_app_server_protocol::CommandExecutionStatus::Declined
+        )
+}
+
+/// QuietCodex: routine (non-failure) `McpToolCall` items are hideable at persisted-transcript
+/// render time; a Failed status always stays visible.
+fn is_hidden_mcp_tool_call(
+    status: &codex_app_server_protocol::McpToolCallStatus,
+    visibility: ToolActivityVisibility,
+) -> bool {
+    visibility != ToolActivityVisibility::Shown
+        && !matches!(status, codex_app_server_protocol::McpToolCallStatus::Failed)
+}
+
 pub(crate) async fn load_session_transcript(
     app_server: &mut AppServerSession,
     thread_id: ThreadId,
     raw_reasoning_visibility: RawReasoningVisibility,
+    tool_activity_visibility: ToolActivityVisibility,
     config: Option<&Config>,
 ) -> std::io::Result<TranscriptCells> {
     let mut thread = app_server
@@ -89,6 +138,7 @@ pub(crate) async fn load_session_transcript(
     Ok(thread_to_transcript_cells(
         thread,
         raw_reasoning_visibility,
+        tool_activity_visibility,
         config,
     ))
 }
@@ -96,6 +146,7 @@ pub(crate) async fn load_session_transcript(
 pub(crate) fn thread_to_transcript_cells(
     thread: Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
+    tool_activity_visibility: ToolActivityVisibility,
     config: Option<&Config>,
 ) -> TranscriptCells {
     let cwd = thread.cwd;
@@ -109,6 +160,7 @@ pub(crate) fn thread_to_transcript_cells(
                 &cwd,
                 turn.items,
                 raw_reasoning_visibility,
+                tool_activity_visibility,
                 config,
             )
         })
@@ -126,6 +178,7 @@ pub(crate) fn thread_items_to_transcript_cells(
     cwd: &AbsolutePathBuf,
     items: impl IntoIterator<Item = ThreadItem>,
     raw_reasoning_visibility: RawReasoningVisibility,
+    tool_activity_visibility: ToolActivityVisibility,
     config: Option<&Config>,
 ) -> TranscriptCells {
     let inline_visualization_context = config.and_then(|config| {
@@ -141,6 +194,7 @@ pub(crate) fn thread_items_to_transcript_cells(
                 item,
                 cwd,
                 raw_reasoning_visibility,
+                tool_activity_visibility,
                 inline_visualization_context.clone(),
             ) {
                 match group {
@@ -156,6 +210,11 @@ pub(crate) fn thread_items_to_transcript_cells(
             continue;
         }
         match item {
+            ThreadItem::McpToolCall { ref status, .. }
+                if is_hidden_mcp_tool_call(status, tool_activity_visibility) =>
+            {
+                PendingActivity::flush(&mut pending, &mut cells);
+            }
             item @ ThreadItem::McpToolCall { .. } => {
                 let Some(call) = tools::McpHistory::from_item(item) else {
                     PendingActivity::flush(&mut pending, &mut cells);
@@ -177,6 +236,15 @@ pub(crate) fn thread_items_to_transcript_cells(
                     PendingActivity::flush(&mut pending, &mut cells);
                     let cell = call.into_cell();
                     cells.push(Arc::new(cell));
+                }
+            }
+            ThreadItem::CommandExecution {
+                ref source,
+                ref status,
+                ..
+            } if is_hidden_command_execution(source, status, tool_activity_visibility) => {
+                if matches!(pending, Some(PendingActivity::Computer(_))) {
+                    PendingActivity::flush(&mut pending, &mut cells);
                 }
             }
             item @ ThreadItem::CommandExecution { .. } => {
@@ -205,6 +273,7 @@ pub(crate) fn thread_items_to_transcript_cells(
                     item,
                     cwd,
                     raw_reasoning_visibility,
+                    tool_activity_visibility,
                     inline_visualization_context.clone(),
                 );
                 if !projected.is_empty() {
@@ -223,6 +292,7 @@ fn item_to_cells(
     item: ThreadItem,
     cwd: &AbsolutePathBuf,
     raw_reasoning_visibility: RawReasoningVisibility,
+    tool_activity_visibility: ToolActivityVisibility,
     inline_visualization_context: Option<InlineVisualizationContext>,
 ) -> TranscriptCells {
     let mut cells: TranscriptCells = Vec::new();
@@ -329,12 +399,17 @@ fn item_to_cells(
                 cells.push(Arc::new(cell));
             }
         }
+        ThreadItem::CommandExecution {
+            ref source,
+            ref status,
+            ..
+        } if is_hidden_command_execution(source, status, tool_activity_visibility) => {}
         item @ ThreadItem::CommandExecution { .. } => {
             if let Some(command) = tools::CommandHistory::from_item(item) {
                 cells.push(Arc::new(command.into_cell()));
             }
         }
-        other => cells.extend(other_items::cells(other, cwd)),
+        other => cells.extend(other_items::cells(other, cwd, tool_activity_visibility)),
     }
     cells
 }

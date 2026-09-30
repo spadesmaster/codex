@@ -2,6 +2,7 @@ use super::*;
 use crate::test_support::PathBufExt;
 use crate::test_support::test_path_buf;
 use crate::thread_transcript::RawReasoningVisibility;
+use crate::thread_transcript::ToolActivityVisibility;
 use crate::thread_transcript::thread_items_to_transcript_cells;
 use codex_app_server_protocol::CommandAction;
 use codex_app_server_protocol::McpToolCallResult;
@@ -68,6 +69,7 @@ fn completed_tools_keep_compact_and_detailed_presentations() {
         &cwd,
         items,
         RawReasoningVisibility::Hidden,
+        ToolActivityVisibility::Shown,
         /*config*/ None,
     );
     assert_eq!(cells.len(), 2);
@@ -125,6 +127,7 @@ fn incomplete_tool_payloads_preserve_last_known_status_and_output() {
         &cwd,
         [command, mcp, missing_result],
         RawReasoningVisibility::Hidden,
+        ToolActivityVisibility::Shown,
         /*config*/ None,
     )
     .into_iter()
@@ -225,6 +228,7 @@ fn historical_command_fallbacks_preserve_status_output_and_group_boundaries() {
             &cwd,
             [exploration("before"), item, exploration("after")],
             RawReasoningVisibility::Hidden,
+            ToolActivityVisibility::Shown,
             /*config*/ None,
         );
         assert_eq!(cells.len(), 3);
@@ -320,6 +324,7 @@ fn agent_tool_fallbacks_preserve_status_without_duplicating_v2_activity() {
             &cwd,
             [item],
             RawReasoningVisibility::Hidden,
+            ToolActivityVisibility::Shown,
             /*config*/ None,
         );
         assert_eq!(cells.len(), usize::from(visible));

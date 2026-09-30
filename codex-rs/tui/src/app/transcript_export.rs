@@ -119,11 +119,14 @@ pub(super) async fn load_export_transcript(
         if let Some(cell) = export_activity_cell(&item) {
             cells.push(Arc::new(cell));
         } else {
+            // QuietCodex: export is a deliberate "give me everything" action, independent of the
+            // live TUI toggle, so it always requests the full transcript.
             cells.extend(thread_items_to_transcript_cells(
                 Some(thread_id),
                 &thread.cwd,
                 [item],
                 visibility,
+                crate::thread_transcript::ToolActivityVisibility::Shown,
                 config,
             ));
         }

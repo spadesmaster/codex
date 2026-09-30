@@ -423,11 +423,14 @@ fn rendered_history_rows(
     } else {
         HistoryRenderMode::Rich
     };
+    let tool_activity_visibility =
+        crate::thread_transcript::ToolActivityVisibility::from(config.tui_tool_activity);
     thread_items_to_transcript_cells(
         Some(thread_id),
         &thread.cwd,
         items,
         visibility,
+        tool_activity_visibility,
         Some(config),
     )
     .into_iter()
