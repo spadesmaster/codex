@@ -4261,10 +4261,10 @@
       "type": "object"
     },
     "ToolActivity": {
-      "description": "QuietCodex tool-activity noise level. See `Tui::tool_activity` for the exact per-level contract.",
+      "description": "Tool-activity presentation level. The default is intentionally quiet for new and upgrading users; see `Tui::tool_activity` for the exact per-level contract.",
       "oneOf": [
         {
-          "description": "Stock behavior: nothing hidden.",
+          "description": "Show all tool activity, including routine successful calls.",
           "enum": [
             "off"
           ],
@@ -4278,7 +4278,7 @@
           "type": "string"
         },
         {
-          "description": "Hide routine successful activity only; failures, warnings, approvals, declines, and control records still show.",
+          "description": "Quiet default: routine tool activity is hidden while safety-relevant records remain visible.",
           "enum": [
             "quiet"
           ],
@@ -4826,7 +4826,7 @@
             }
           ],
           "default": "quiet",
-          "description": "QuietCodex tool-activity noise level: - `quiet`: default; hide routine successful agent tool/exec activity while retaining failures, warnings, approvals, declines, control records, and user content. - `concise`: hide the same routine successful activity and retain the same safety-relevant records. - `off`: full output, retaining all tool activity. Live interactive approval prompts are unaffected regardless of level — they render through a separate widget system, not the transcript. Invalid values fail safely to the default behavior."
+          "description": "Tool-activity presentation level: - `off`: show all tool activity, including routine successful calls. - `concise` and `quiet`: hide routine successful activity while preserving failures, warnings, approvals, declines, control records, and user-authored content."
         },
         "vim_mode_default": {
           "default": false,
