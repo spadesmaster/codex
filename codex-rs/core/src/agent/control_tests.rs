@@ -688,8 +688,22 @@ async fn get_status_returns_not_found_for_missing_thread() {
     assert_eq!(status, AgentStatus::NotFound);
 }
 
-#[tokio::test]
-async fn get_status_returns_pending_init_for_new_thread() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn get_status_returns_pending_init_for_new_thread() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "get_status_returns_pending_init_for_new_thread",
+        || async {
+            get_status_returns_pending_init_for_new_thread_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn get_status_returns_pending_init_for_new_thread_inner() {
     let harness = AgentControlHarness::new().await;
     let (thread_id, _) = harness.start_thread().await;
     let status = harness.control.get_status(thread_id).await;
@@ -712,8 +726,22 @@ async fn subscribe_status_errors_for_missing_thread() {
     );
 }
 
-#[tokio::test]
-async fn subscribe_status_updates_on_shutdown() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn subscribe_status_updates_on_shutdown() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "subscribe_status_updates_on_shutdown",
+        || async {
+            subscribe_status_updates_on_shutdown_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn subscribe_status_updates_on_shutdown_inner() {
     let harness = AgentControlHarness::new().await;
     let (thread_id, thread) = harness.start_thread().await;
     let mut status_rx = harness
@@ -742,8 +770,22 @@ async fn subscribe_status_updates_on_shutdown() {
     assert_eq!(shutdown.status(), Some(&AgentStatus::Shutdown));
 }
 
-#[tokio::test]
-async fn send_input_submits_user_message() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn send_input_submits_user_message() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "send_input_submits_user_message",
+        || async {
+            send_input_submits_user_message_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn send_input_submits_user_message_inner() {
     let harness = AgentControlHarness::new().await;
     let (thread_id, thread) = harness.start_thread().await;
 
@@ -763,8 +805,22 @@ async fn send_input_submits_user_message() {
     wait_for_recorded_user_message(thread.as_ref(), "hello from tests").await;
 }
 
-#[tokio::test]
-async fn send_inter_agent_communication_without_turn_queues_message_without_triggering_turn() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn send_inter_agent_communication_without_turn_queues_message_without_triggering_turn() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "send_inter_agent_communication_without_turn_queues_message_without_triggering_turn",
+        || async {
+            send_inter_agent_communication_without_turn_queues_message_without_triggering_turn_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn send_inter_agent_communication_without_turn_queues_message_without_triggering_turn_inner() {
     let harness = AgentControlHarness::new().await;
     let (thread_id, thread) = harness.start_thread().await;
     let communication = InterAgentCommunication::new(
@@ -1137,8 +1193,22 @@ async fn check_v2_agent_reload(route: V2ReloadRoute) {
     assert!(captured.is_some());
 }
 
-#[tokio::test]
-async fn resume_agent_from_rollout_does_not_reopen_v2_descendants() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_from_rollout_does_not_reopen_v2_descendants() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_from_rollout_does_not_reopen_v2_descendants",
+        || async {
+            resume_agent_from_rollout_does_not_reopen_v2_descendants_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_from_rollout_does_not_reopen_v2_descendants_inner() {
     let (home, mut config) = test_config().await;
     let _ = config.features.enable(Feature::MultiAgentV2);
     let _ = config.features.enable(Feature::Sqlite);
@@ -1485,10 +1555,23 @@ async fn cold_resume_with_thread_instructions_preserves_lazy_v2_child_inheritanc
     );
 }
 
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload` above
+// (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core` pass.
 #[test_case::test_case(false; "snapshot_is_not_shared")]
 #[test_case::test_case(true; "shared_provider_survives")]
-#[tokio::test]
-async fn v2_sibling_reload_preserves_shared_instructions_after_root_unloads(shared: bool) {
+fn v2_sibling_reload_preserves_shared_instructions_after_root_unloads(
+    shared: bool,
+) -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "v2_sibling_reload_preserves_shared_instructions_after_root_unloads",
+        move || async move {
+            v2_sibling_reload_preserves_shared_instructions_after_root_unloads_inner(shared).await;
+            Ok(())
+        },
+    )
+}
+
+async fn v2_sibling_reload_preserves_shared_instructions_after_root_unloads_inner(shared: bool) {
     let (home, mut config) = test_config().await;
     config
         .features
@@ -1664,8 +1747,22 @@ async fn resumed_root_reuses_or_freezes_surviving_shared_instructions() {
     );
 }
 
-#[tokio::test]
-async fn spawn_agent_creates_thread_and_sends_prompt() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_creates_thread_and_sends_prompt() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_creates_thread_and_sends_prompt",
+        || async {
+            spawn_agent_creates_thread_and_sends_prompt_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_creates_thread_and_sends_prompt_inner() {
     let harness = AgentControlHarness::new().await;
     let thread_id = harness
         .control
@@ -1684,8 +1781,22 @@ async fn spawn_agent_creates_thread_and_sends_prompt() {
     wait_for_recorded_user_message(thread.as_ref(), "spawned").await;
 }
 
-#[tokio::test]
-async fn ephemeral_spawn_does_not_persist_agent_graph_edge() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn ephemeral_spawn_does_not_persist_agent_graph_edge() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "ephemeral_spawn_does_not_persist_agent_graph_edge",
+        || async {
+            ephemeral_spawn_does_not_persist_agent_graph_edge_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn ephemeral_spawn_does_not_persist_agent_graph_edge_inner() {
     let (home, mut config) = test_config().await;
     config.ephemeral = true;
     let harness = AgentControlHarness::new_with_config(home, config).await;
@@ -1720,8 +1831,22 @@ async fn ephemeral_spawn_does_not_persist_agent_graph_edge() {
     );
 }
 
-#[tokio::test]
-async fn spawn_agent_fork_from_paginated_parent_uses_model_context_prefix() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_fork_from_paginated_parent_uses_model_context_prefix() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_fork_from_paginated_parent_uses_model_context_prefix",
+        || async {
+            spawn_agent_fork_from_paginated_parent_uses_model_context_prefix_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_fork_from_paginated_parent_uses_model_context_prefix_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_paginated_thread().await;
     parent_thread
@@ -1893,8 +2018,22 @@ async fn spawn_agent_fork_from_paginated_parent_uses_model_context_prefix() {
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_without_fork_from_paginated_parent_stays_fresh_and_paginated() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_without_fork_from_paginated_parent_stays_fresh_and_paginated() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_without_fork_from_paginated_parent_stays_fresh_and_paginated",
+        || async {
+            spawn_agent_without_fork_from_paginated_parent_stays_fresh_and_paginated_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_without_fork_from_paginated_parent_stays_fresh_and_paginated_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_paginated_thread().await;
     parent_thread
@@ -1949,8 +2088,25 @@ async fn spawn_agent_without_fork_from_paginated_parent_stays_fresh_and_paginate
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_fork_sanitizes_inherited_compaction_metadata() {
+<<// M135 rebase: run the generator-heavy test with the large-stack harness.
+#[test_case::test_case(true; "thread context enabled")]
+#[test_case::test_case(false; "thread context disabled")]
+fn spawn_agent_fork_sanitizes_inherited_compaction_metadata(
+    thread_context_enabled: bool,
+) -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_fork_sanitizes_inherited_compaction_metadata",
+        move || async move {
+            spawn_agent_fork_sanitizes_inherited_compaction_metadata_inner(thread_context_enabled)
+                .await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_fork_sanitizes_inherited_compaction_metadata_inner(
+    thread_context_enabled: bool,
+) {)
     let mut harness = AgentControlHarness::new().await;
     let _ = harness.config.features.disable(Feature::MultiAgentV2);
 
@@ -2105,8 +2261,22 @@ async fn spawn_agent_fork_sanitizes_inherited_compaction_metadata() {
     );
 }
 
-#[tokio::test]
-async fn spawn_agent_numeric_fork_from_compacted_paginated_parent_clamps_to_provable_turns() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_numeric_fork_from_compacted_paginated_parent_clamps_to_provable_turns() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_numeric_fork_from_compacted_paginated_parent_clamps_to_provable_turns",
+        || async {
+            spawn_agent_numeric_fork_from_compacted_paginated_parent_clamps_to_provable_turns_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_numeric_fork_from_compacted_paginated_parent_clamps_to_provable_turns_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_paginated_thread().await;
     let parent_spawn_call_id = "spawn-call-paginated-numeric".to_string();
@@ -2187,8 +2357,22 @@ async fn spawn_agent_numeric_fork_from_compacted_paginated_parent_clamps_to_prov
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_can_fork_parent_thread_history_with_sanitized_items",
+        || async {
+            spawn_agent_can_fork_parent_thread_history_with_sanitized_items_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items_inner() {
     let managed_fragment = "<managed_developer_instructions>\nParent developer instructions.\n</managed_developer_instructions>";
     let persistent_fragment =
         "<persistent_mode>\nParent developer instructions.\n</persistent_mode>";
@@ -2552,8 +2736,27 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
+<<// M135 rebase: run the generator-heavy test with the large-stack harness.
+#[test_case::test_case(true; "thread context enabled")]
+#[test_case::test_case(false; "thread context disabled")]
+fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history(
+    thread_context_enabled: bool,
+) -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_fork_strips_parent_usage_hints_from_compacted_history",
+        move || async move {
+            spawn_agent_fork_strips_parent_usage_hints_from_compacted_history_inner(
+                thread_context_enabled,
+            )
+            .await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history_inner(
+    thread_context_enabled: bool,
+) {)
     let harness = AgentControlHarness::new().await;
     let mut parent_config = harness.config.clone();
     let _ = parent_config.features.enable(Feature::MultiAgentV2);
@@ -2808,8 +3011,22 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
 
 /// Full-history forks must restore child instructions when compaction discarded
 /// the only matching parent instruction fragment from effective history.
-#[tokio::test]
-async fn spawn_agent_full_fork_restores_instructions_after_compaction_discards_parent_fragment() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_full_fork_restores_instructions_after_compaction_discards_parent_fragment() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_full_fork_restores_instructions_after_compaction_discards_parent_fragment",
+        || async {
+            spawn_agent_full_fork_restores_instructions_after_compaction_discards_parent_fragment_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_full_fork_restores_instructions_after_compaction_discards_parent_fragment_inner() {
     let harness = AgentControlHarness::new().await;
     let mut parent_config = harness.config.clone();
     let _ = parent_config.features.enable(Feature::MultiAgentV2);
@@ -2956,8 +3173,22 @@ async fn spawn_agent_full_fork_restores_instructions_after_compaction_discards_p
 
 /// A legacy compaction clears the child's baseline, so its first turn must
 /// rebuild configured developer instructions exactly once.
-#[tokio::test]
-async fn spawn_agent_full_fork_legacy_compaction_rebuilds_child_instructions_once() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_full_fork_legacy_compaction_rebuilds_child_instructions_once() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_full_fork_legacy_compaction_rebuilds_child_instructions_once",
+        || async {
+            spawn_agent_full_fork_legacy_compaction_rebuilds_child_instructions_once_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_full_fork_legacy_compaction_rebuilds_child_instructions_once_inner() {
     let managed_policy = "Managed policy for every agent.";
     let current_managed_fragment = format!(
         "<managed_developer_instructions>\n{managed_policy}\n</managed_developer_instructions>"
@@ -3186,10 +3417,26 @@ async fn spawn_agent_full_fork_legacy_compaction_rebuilds_child_instructions_onc
     }
 }
 
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload` above
+// (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core` pass.
 #[test_case::test_case(false; "complete")]
 #[test_case::test_case(true; "error_reason")]
-#[tokio::test]
-async fn resume_and_cold_fork_restore_mcp_attribution_in_constructed_requests(
+fn resume_and_cold_fork_restore_mcp_attribution_in_constructed_requests(
+    record_invalid_source: bool,
+) -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_and_cold_fork_restore_mcp_attribution_in_constructed_requests",
+        move || async move {
+            resume_and_cold_fork_restore_mcp_attribution_in_constructed_requests_inner(
+                record_invalid_source,
+            )
+            .await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_and_cold_fork_restore_mcp_attribution_in_constructed_requests_inner(
     record_invalid_source: bool,
 ) {
     let harness = AgentControlHarness::new().await;
@@ -3311,8 +3558,22 @@ async fn resume_and_cold_fork_restore_mcp_attribution_in_constructed_requests(
         .expect("shutdown resumed thread");
 }
 
-#[tokio::test]
-async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_fork_flushes_parent_rollout_before_loading_history",
+        || async {
+            spawn_agent_fork_flushes_parent_rollout_before_loading_history_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
     let turn_context = parent_thread.session.new_default_turn().await;
@@ -3373,8 +3634,22 @@ async fn spawn_agent_fork_flushes_parent_rollout_before_loading_history() {
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_fork_last_n_turns_keeps_only_recent_turns",
+        || async {
+            spawn_agent_fork_last_n_turns_keeps_only_recent_turns_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
     let old_turn_context = parent_thread.session.new_default_turn().await;
@@ -3546,8 +3821,22 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_limit() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_limit() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_limit",
+        || async {
+            spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_limit_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_limit_inner() {
     let harness = AgentControlHarness::new().await;
     let selected_capability_roots = vec![SelectedCapabilityRoot {
         id: "demo@1".to_string(),
@@ -3670,8 +3959,22 @@ async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_li
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_fork_last_n_turns_strips_parent_usage_hints",
+        || async {
+            spawn_agent_fork_last_n_turns_strips_parent_usage_hints_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints_inner() {
     let persistent_fragment =
         "<persistent_mode>\nParent persistent instructions.\n</persistent_mode>";
     let harness = AgentControlHarness::new().await;
@@ -3810,8 +4113,22 @@ async fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints() {
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn spawn_agent_respects_legacy_max_threads_alias() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_respects_legacy_max_threads_alias() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_respects_legacy_max_threads_alias",
+        || async {
+            spawn_agent_respects_legacy_max_threads_alias_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_respects_legacy_max_threads_alias_inner() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
         "agents.max_threads".to_string(),
@@ -3862,8 +4179,22 @@ async fn spawn_agent_respects_legacy_max_threads_alias() {
         .expect("shutdown agent");
 }
 
-#[tokio::test]
-async fn spawn_agent_releases_slot_after_shutdown() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_releases_slot_after_shutdown() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_releases_slot_after_shutdown",
+        || async {
+            spawn_agent_releases_slot_after_shutdown_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_releases_slot_after_shutdown_inner() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
         "agents.max_concurrent_threads_per_session".to_string(),
@@ -3905,8 +4236,22 @@ async fn spawn_agent_releases_slot_after_shutdown() {
         .expect("shutdown agent");
 }
 
-#[tokio::test]
-async fn spawn_agent_limit_shared_across_clones() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_agent_limit_shared_across_clones() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_agent_limit_shared_across_clones",
+        || async {
+            spawn_agent_limit_shared_across_clones_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_agent_limit_shared_across_clones_inner() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
         "agents.max_concurrent_threads_per_session".to_string(),
@@ -3950,8 +4295,22 @@ async fn spawn_agent_limit_shared_across_clones() {
         .expect("shutdown agent");
 }
 
-#[tokio::test]
-async fn resume_agent_respects_max_threads_limit() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_respects_max_threads_limit() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_respects_max_threads_limit",
+        || async {
+            resume_agent_respects_max_threads_limit_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_respects_max_threads_limit_inner() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
         "agents.max_concurrent_threads_per_session".to_string(),
@@ -4006,8 +4365,22 @@ async fn resume_agent_respects_max_threads_limit() {
         .expect("shutdown active thread");
 }
 
-#[tokio::test]
-async fn resume_agent_releases_slot_after_resume_failure() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_releases_slot_after_resume_failure() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_releases_slot_after_resume_failure",
+        || async {
+            resume_agent_releases_slot_after_resume_failure_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_releases_slot_after_resume_failure_inner() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
         "agents.max_concurrent_threads_per_session".to_string(),
@@ -4037,8 +4410,22 @@ async fn resume_agent_releases_slot_after_resume_failure() {
         .expect("shutdown resumed thread");
 }
 
-#[tokio::test]
-async fn spawn_child_completion_notifies_parent_history() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_child_completion_notifies_parent_history() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_child_completion_notifies_parent_history",
+        || async {
+            spawn_child_completion_notifies_parent_history_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_child_completion_notifies_parent_history_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
@@ -4071,8 +4458,22 @@ async fn spawn_child_completion_notifies_parent_history() {
     assert_eq!(wait_for_subagent_notification(&parent_thread).await, true);
 }
 
-#[tokio::test]
-async fn multi_agent_v2_completion_ignores_dead_direct_parent() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn multi_agent_v2_completion_ignores_dead_direct_parent() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "multi_agent_v2_completion_ignores_dead_direct_parent",
+        || async {
+            multi_agent_v2_completion_ignores_dead_direct_parent_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn multi_agent_v2_completion_ignores_dead_direct_parent_inner() {
     let harness = AgentControlHarness::new().await;
     let mut config = harness.config.clone();
     let _ = config.features.enable(Feature::MultiAgentV2);
@@ -4176,8 +4577,23 @@ async fn multi_agent_v2_completion_ignores_dead_direct_parent() {
     assert!(!has_subagent_notification(root_history.raw_items()));
 }
 
-#[tokio::test]
-async fn multi_agent_v2_completion_queues_message_for_direct_parent() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload` above
+// (see Foundry Issue I78): `AgentControlHarness::new` drives the same unboxed async call
+// chain, so this test also overflows the default `#[tokio::test]` thread stack under a
+// Windows debug build. Found via a full unfiltered `cargo test -p codex-core` pass (not
+// previously reported). Run it on a thread sized like the rest of Codex's async work.
+#[test]
+fn multi_agent_v2_completion_queues_message_for_direct_parent() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "multi_agent_v2_completion_queues_message_for_direct_parent",
+        || async {
+            multi_agent_v2_completion_queues_message_for_direct_parent_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn multi_agent_v2_completion_queues_message_for_direct_parent_inner() {
     let harness = AgentControlHarness::new().await;
     let (_root_thread_id, root_thread) = harness.start_thread().await;
     let (worker_thread_id, _worker_thread) = harness.start_thread().await;
@@ -4274,8 +4690,22 @@ async fn multi_agent_v2_completion_queues_message_for_direct_parent() {
     ));
 }
 
-#[tokio::test]
-async fn completion_watcher_notifies_parent_when_child_is_missing() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload` above
+// (see Foundry Issue I78): `AgentControlHarness::new` drives the same unboxed async call
+// chain, so this test also overflows the default `#[tokio::test]` thread stack under a
+// Windows debug build. Run it on a thread sized like the rest of Codex's async work instead.
+#[test]
+fn completion_watcher_notifies_parent_when_child_is_missing() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "completion_watcher_notifies_parent_when_child_is_missing",
+        || async {
+            completion_watcher_notifies_parent_when_child_is_missing_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn completion_watcher_notifies_parent_when_child_is_missing_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
     let child_thread_id = ThreadId::new();
@@ -4309,8 +4739,22 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
     );
 }
 
-#[tokio::test]
-async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_thread_subagent_gets_random_nickname_in_session_source() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_thread_subagent_gets_random_nickname_in_session_source",
+        || async {
+            spawn_thread_subagent_gets_random_nickname_in_session_source_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_thread_subagent_gets_random_nickname_in_session_source_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
 
@@ -4353,8 +4797,22 @@ async fn spawn_thread_subagent_gets_random_nickname_in_session_source() {
     assert_eq!(agent_role, Some("explorer".to_string()));
 }
 
-#[tokio::test]
-async fn spawn_thread_subagents_persist_parent_originator_across_new_and_truncated_fork() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_thread_subagents_persist_parent_originator_across_new_and_truncated_fork() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_thread_subagents_persist_parent_originator_across_new_and_truncated_fork",
+        || async {
+            spawn_thread_subagents_persist_parent_originator_across_new_and_truncated_fork_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_thread_subagents_persist_parent_originator_across_new_and_truncated_fork_inner() {
     let harness = AgentControlHarness::new().await;
     let parent = harness
         .manager
@@ -4422,8 +4880,22 @@ async fn spawn_thread_subagents_persist_parent_originator_across_new_and_truncat
     assert_eq!(child_originator, parent_originator);
 }
 
-#[tokio::test]
-async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn spawn_thread_subagent_uses_role_specific_nickname_candidates() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "spawn_thread_subagent_uses_role_specific_nickname_candidates",
+        || async {
+            spawn_thread_subagent_uses_role_specific_nickname_candidates_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn spawn_thread_subagent_uses_role_specific_nickname_candidates_inner() {
     let mut harness = AgentControlHarness::new().await;
     harness.config.agent_roles.insert(
         "researcher".to_string(),
@@ -4466,8 +4938,22 @@ async fn spawn_thread_subagent_uses_role_specific_nickname_candidates() {
     assert_eq!(agent_nickname, Some("Atlas".to_string()));
 }
 
-#[tokio::test]
-async fn resume_thread_subagent_restores_stored_metadata() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_thread_subagent_restores_stored_metadata() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_thread_subagent_restores_stored_metadata",
+        || async {
+            resume_thread_subagent_restores_stored_metadata_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_thread_subagent_restores_stored_metadata_inner() {
     let (home, config) = test_config().await;
     let thread_store = Arc::new(InMemoryThreadStore::default());
     let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy"));
@@ -4626,8 +5112,22 @@ async fn resume_thread_subagent_restores_stored_metadata() {
         .expect("resumed child shutdown should submit");
 }
 
-#[tokio::test]
-async fn resume_agent_from_rollout_reads_archived_rollout_path() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_from_rollout_reads_archived_rollout_path() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_from_rollout_reads_archived_rollout_path",
+        || async {
+            resume_agent_from_rollout_reads_archived_rollout_path_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_from_rollout_reads_archived_rollout_path_inner() {
     let harness = AgentControlHarness::new().await;
     let child_thread_id = harness
         .control
@@ -4675,8 +5175,22 @@ async fn resume_agent_from_rollout_reads_archived_rollout_path() {
         .expect("resumed child shutdown should succeed");
 }
 
-#[tokio::test]
-async fn resume_agent_from_paginated_rollout_loads_model_context() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_from_paginated_rollout_loads_model_context() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_from_paginated_rollout_loads_model_context",
+        || async {
+            resume_agent_from_paginated_rollout_loads_model_context_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_from_paginated_rollout_loads_model_context_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_paginated_thread().await;
     let child_thread_id = harness
@@ -4734,8 +5248,22 @@ async fn resume_agent_from_paginated_rollout_loads_model_context() {
         .expect("parent shutdown should submit");
 }
 
-#[tokio::test]
-async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants",
+        || async {
+            list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
     let worker_path = AgentPath::root().join("worker").expect("worker path");
@@ -4860,8 +5388,23 @@ async fn list_agent_subtree_thread_ids_includes_anonymous_and_closed_descendants
     );
 }
 
-#[tokio::test]
-async fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload` above
+// (see Foundry Issue I78): this fixture also drives a deep unboxed async call chain, so it
+// overflows the default `#[tokio::test]` thread stack under a Windows debug build. Found
+// via a full unfiltered `cargo test -p codex-core` pass (not previously reported). Run it
+// on a thread sized like the rest of Codex's async work instead.
+#[test]
+fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root",
+        || async {
+            list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root_inner() {
     let (_home, config) = test_config().await;
     let manager = ThreadManager::with_models_provider_home_and_state_for_tests(
         CodexAuth::from_api_key("dummy"),
@@ -4920,8 +5463,22 @@ async fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root()
     assert_eq!(subtree_thread_ids, expected_subtree_thread_ids);
 }
 
-#[tokio::test]
-async fn shutdown_agent_tree_closes_live_descendants() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn shutdown_agent_tree_closes_live_descendants() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "shutdown_agent_tree_closes_live_descendants",
+        || async {
+            shutdown_agent_tree_closes_live_descendants_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn shutdown_agent_tree_closes_live_descendants_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
 
@@ -5005,8 +5562,22 @@ async fn shutdown_agent_tree_closes_live_descendants() {
     assert_eq!(shutdown_ids, expected_shutdown_ids);
 }
 
-#[tokio::test]
-async fn shutdown_agent_tree_closes_descendants_when_started_at_child() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn shutdown_agent_tree_closes_descendants_when_started_at_child() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "shutdown_agent_tree_closes_descendants_when_started_at_child",
+        || async {
+            shutdown_agent_tree_closes_descendants_when_started_at_child_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn shutdown_agent_tree_closes_descendants_when_started_at_child_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, _parent_thread) = harness.start_thread().await;
 
@@ -5096,8 +5667,22 @@ async fn shutdown_agent_tree_closes_descendants_when_started_at_child() {
     assert_eq!(shutdown_ids, expected_shutdown_ids);
 }
 
-#[tokio::test]
-async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_from_rollout_does_not_reopen_closed_descendants() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_from_rollout_does_not_reopen_closed_descendants",
+        || async {
+            resume_agent_from_rollout_does_not_reopen_closed_descendants_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_from_rollout_does_not_reopen_closed_descendants_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
@@ -5191,8 +5776,22 @@ async fn resume_agent_from_rollout_does_not_reopen_closed_descendants() {
         .expect("tree shutdown after resume should succeed");
 }
 
-#[tokio::test]
-async fn resume_closed_child_reopens_open_descendants() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_closed_child_reopens_open_descendants() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_closed_child_reopens_open_descendants",
+        || async {
+            resume_closed_child_reopens_open_descendants_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_closed_child_reopens_open_descendants_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
@@ -5288,8 +5887,22 @@ async fn resume_closed_child_reopens_open_descendants() {
         .expect("parent shutdown should succeed");
 }
 
-#[tokio::test]
-async fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdown() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdown() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdown",
+        || async {
+            resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdown_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdown_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
@@ -5379,8 +5992,22 @@ async fn resume_agent_from_rollout_reopens_open_descendants_after_manager_shutdo
         .expect("tree shutdown after subtree resume should succeed");
 }
 
-#[tokio::test]
-async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_source_is_stale() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_source_is_stale() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_source_is_stale",
+        || async {
+            resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_source_is_stale_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_source_is_stale_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 
@@ -5510,8 +6137,22 @@ async fn resume_agent_from_rollout_uses_edge_data_when_descendant_metadata_sourc
         .expect("tree shutdown after subtree resume should succeed");
 }
 
-#[tokio::test]
-async fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `check_v2_agent_reload`
+// above (see Foundry Issue I78). Found via a full unfiltered `cargo test -p codex-core`
+// pass (not previously reported). Run it on a thread sized like the rest of Codex's
+// async work instead of the default #[tokio::test] thread stack.
+#[test]
+fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "resume_agent_from_rollout_skips_descendants_when_parent_resume_fails",
+        || async {
+            resume_agent_from_rollout_skips_descendants_when_parent_resume_fails_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn resume_agent_from_rollout_skips_descendants_when_parent_resume_fails_inner() {
     let harness = AgentControlHarness::new().await;
     let (parent_thread_id, parent_thread) = harness.start_thread().await;
 

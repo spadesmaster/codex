@@ -19,8 +19,25 @@ use codex_protocol::protocol::TurnCompleteEvent;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 
-#[tokio::test]
-async fn residency_slot_reservation_unloads_oldest_idle_v2_agent() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `agent::control::tests::
+// check_v2_agent_reload` (see Foundry Issue I78): this fixture drives the same unboxed
+// async call chain through `reserve_v2_residency_slot`/`spawn_v2_subagent`, so it also
+// overflows the default `#[tokio::test]` thread stack under a Windows debug build. Found
+// while confirming the sibling `interrupted_v2_agent_is_lost_after_residency_eviction` fix
+// with a full unfiltered `cargo test -p codex-core` pass (not previously reported). Run it
+// on a thread sized like the rest of Codex's async work instead.
+#[test]
+fn residency_slot_reservation_unloads_oldest_idle_v2_agent() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "residency_slot_reservation_unloads_oldest_idle_v2_agent",
+        || async {
+            residency_slot_reservation_unloads_oldest_idle_v2_agent_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn residency_slot_reservation_unloads_oldest_idle_v2_agent_inner() {
     let mut config = test_config().await;
     let _ = config.features.enable(Feature::MultiAgentV2);
     config.multi_agent_v2.max_concurrent_threads_per_session = 2;
@@ -70,8 +87,23 @@ async fn residency_slot_reservation_unloads_oldest_idle_v2_agent() {
     assert!(manager.get_thread(second.thread_id).await.is_ok());
 }
 
-#[tokio::test]
-async fn interrupted_v2_agent_is_lost_after_residency_eviction() {
+// Same oversized-generator / STATUS_STACK_OVERFLOW hazard as `agent::control::tests::
+// check_v2_agent_reload` (see Foundry Issue I78): this fixture drives the same unboxed
+// async call chain through `reserve_v2_residency_slot`/`spawn_v2_subagent`/
+// `ensure_v2_agent_loaded`, so it also overflows the default `#[tokio::test]` thread stack
+// under a Windows debug build. Run it on a thread sized like the rest of Codex's async work.
+#[test]
+fn interrupted_v2_agent_is_lost_after_residency_eviction() -> anyhow::Result<()> {
+    core_test_support::test_codex::run_test_with_large_stack(
+        "interrupted_v2_agent_is_lost_after_residency_eviction",
+        || async {
+            interrupted_v2_agent_is_lost_after_residency_eviction_inner().await;
+            Ok(())
+        },
+    )
+}
+
+async fn interrupted_v2_agent_is_lost_after_residency_eviction_inner() {
     let mut config = test_config().await;
     let _ = config.features.enable(Feature::MultiAgentV2);
     config.multi_agent_v2.max_concurrent_threads_per_session = 2;
