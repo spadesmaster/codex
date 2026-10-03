@@ -2088,7 +2088,7 @@ async fn spawn_agent_without_fork_from_paginated_parent_stays_fresh_and_paginate
         .expect("parent shutdown should submit");
 }
 
-<<// M135 rebase: run the generator-heavy test with the large-stack harness.
+// M135 rebase: run the generator-heavy test with the large-stack harness.
 #[test_case::test_case(true; "thread context enabled")]
 #[test_case::test_case(false; "thread context disabled")]
 fn spawn_agent_fork_sanitizes_inherited_compaction_metadata(
@@ -2736,7 +2736,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items_inner()
         .expect("parent shutdown should submit");
 }
 
-<<// M135 rebase: run the generator-heavy test with the large-stack harness.
+// M135 rebase: run the generator-heavy test with the large-stack harness.
 #[test_case::test_case(true; "thread context enabled")]
 #[test_case::test_case(false; "thread context disabled")]
 fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history(

@@ -806,7 +806,7 @@ pub struct Config {
     /// Own the fullscreen transcript when the alternate screen is enabled.
     pub tui_fullscreen_transcript: bool,
 
-<<    /// Override the terminal-specific default for copying transcript mouse selections.
+    /// Override the terminal-specific default for copying transcript mouse selections.
     pub tui_copy_on_select: codex_config::types::CopyOnSelect,
 
     /// Right-click text paste fallback for the fullscreen TUI.

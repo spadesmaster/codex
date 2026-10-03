@@ -874,7 +874,7 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub fullscreen_transcript: bool,
 
-<<    #[serde(default)]
+    #[serde(default)]
     pub copy_on_select: CopyOnSelect,
 
     #[serde(default)]

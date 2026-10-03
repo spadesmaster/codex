@@ -23,7 +23,7 @@ pub(super) async fn test_config() -> (tempfile::TempDir, Config) {
     config.cwd = PathBuf::from(test_path_display("/tmp/project")).abs();
     config.config_layer_stack = ConfigLayerStack::default();
     config.startup_warnings.clear();
-<<    config.tui_tool_activity = codex_config::types::ToolActivity::Off,
+    config.tui_tool_activity = codex_config::types::ToolActivity::Off;
     (codex_home, config)
 }
 

@@ -291,6 +291,7 @@ async fn hidden_agent_exec_failed_without_exit_code_remains_visible() {
         &mut chat,
         AppServerThreadItem::CommandExecution {
             model_context: None,
+            sandbox_type: None,
             id,
             command,
             cwd,
@@ -341,6 +342,7 @@ async fn hidden_agent_exec_declined_without_exit_code_remains_visible() {
         &mut chat,
         AppServerThreadItem::CommandExecution {
             model_context: None,
+            sandbox_type: None,
             id,
             command,
             cwd,
@@ -473,6 +475,7 @@ async fn hidden_replay_of_completed_agent_command_emits_concise_record() {
             process_id: None,
             plugin_id: None,
             script_path: None,
+            sandbox_type: None,
             source: ExecCommandSource::Agent,
             status: AppServerCommandExecutionStatus::Completed,
             command_actions: Vec::new(),
@@ -515,6 +518,7 @@ async fn hidden_replay_of_user_shell_command_remains_visible() {
             process_id: None,
             plugin_id: None,
             script_path: None,
+            sandbox_type: None,
             source: ExecCommandSource::UserShell,
             status: AppServerCommandExecutionStatus::Completed,
             command_actions: Vec::new(),
@@ -977,6 +981,7 @@ fn persisted_command(
 ) -> AppServerThreadItem {
     AppServerThreadItem::CommandExecution {
         model_context: None,
+        sandbox_type: None,
         id: id.to_string(),
         command: format!("printf {id}"),
         cwd: test_path_buf("/tmp/project").abs().into(),
@@ -1319,6 +1324,7 @@ fn failed_exec_cell_count(
         chat,
         AppServerThreadItem::CommandExecution {
             model_context: None,
+            sandbox_type: None,
             id,
             command,
             cwd,
