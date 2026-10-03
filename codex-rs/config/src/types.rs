@@ -874,12 +874,23 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub fullscreen_transcript: bool,
 
+    /// Copy selected transcript text when the mouse button is released.
+    /// Defaults to `auto`: enabled except in direct terminals known to forward their native
+    /// copy shortcut (Ghostty 1.2+, Kitty on macOS, Windows Terminal, and VS Code on Windows).
+    /// Unknown terminals, Ghostty without a recognized version, and tmux/Zellij default to copying.
     #[serde(default)]
     pub copy_on_select: CopyOnSelect,
 
+    /// Right-click text paste fallback. Defaults to `auto` (Windows/WSL/Linux).
+    /// `on` also enables macOS; neither mode reads over SSH or in recognized VS Code terminals.
+    /// This controls the fullscreen fallback, not the terminal's own paste binding.
     #[serde(default)]
     pub right_click_paste: RightClickPaste,
 
+    /// Tool-activity presentation level:
+    /// - `off`: show all tool activity, including routine successful calls.
+    /// - `concise` and `quiet`: hide routine successful activity while preserving failures,
+    ///   warnings, approvals, declines, control records, and user-authored content.
     #[serde(default)]
     pub tool_activity: ToolActivity,
 
