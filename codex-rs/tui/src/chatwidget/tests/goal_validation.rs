@@ -50,6 +50,7 @@ fn next_goal_objective(
 
 #[tokio::test]
 async fn goal_slash_command_accepts_objective_at_limit() {
+    assert_eq!(MAX_THREAD_GOAL_OBJECTIVE_CHARS, 25_000);
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
     let thread_id = ThreadId::new();

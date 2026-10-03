@@ -2251,6 +2251,35 @@ async fn apply_patch_request_omits_diff_summary_from_modal() -> anyhow::Result<(
 }
 
 #[tokio::test]
+async fn completed_nonzero_agent_failure_remains_visible_at_quiet_level() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.set_tool_activity_level(ToolActivity::Quiet);
+    let completed = AppServerThreadItem::CommandExecution {
+        model_context: None,
+        id: "agent-completed-nonzero".to_string(),
+        command: "printf failure".to_string(),
+        cwd: chat.config.cwd.clone().into(),
+        process_id: None,
+        plugin_id: None,
+        script_path: None,
+        source: ExecCommandSource::Agent,
+        status: AppServerCommandExecutionStatus::Completed,
+        command_actions: Vec::new(),
+        aggregated_output: Some("failure".to_string()),
+        exit_code: Some(7),
+        duration_ms: Some(5),
+    };
+    chat.on_command_execution_started(completed.clone());
+    chat.handle_command_execution_completed_now(completed, /*from_replay*/ false);
+    let inserted = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter_map(|event| match event {
+            AppEvent::InsertHistoryCell(cell) => Some(cell),
+            _ => None,
+        })
+        .count();
+    assert_eq!(inserted, 1);
+}
+#[tokio::test]
 async fn failed_agent_exec_off_is_visible_and_on_is_hidden() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let failed = AppServerThreadItem::CommandExecution {

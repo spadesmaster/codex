@@ -481,10 +481,9 @@ impl ChatWidget {
         if self.suppressed_exec_calls.remove(&id) {
             return;
         }
-        let routine_success = matches!(
-            status,
-            codex_app_server_protocol::CommandExecutionStatus::Completed
-        );
+        let routine_success = status
+            == codex_app_server_protocol::CommandExecutionStatus::Completed
+            && exit_code == 0;
         // A5-HideWarn precedence fix (2026-09-29, operator-direct: "write a test proving A5's
         // hide_warnings works during replay"): a warning-marked result is ALSO `routine_success`
         // by the definition above (both require `status == Completed`), so it could otherwise take

@@ -4105,7 +4105,7 @@ pub enum ThreadGoalStatus {
     Complete,
 }
 
-pub const MAX_THREAD_GOAL_OBJECTIVE_CHARS: usize = 4_000;
+pub const MAX_THREAD_GOAL_OBJECTIVE_CHARS: usize = 25_000;
 
 pub fn validate_thread_goal_objective(value: &str) -> Result<(), String> {
     if value.is_empty() {
