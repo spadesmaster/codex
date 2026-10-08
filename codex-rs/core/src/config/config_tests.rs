@@ -65,6 +65,7 @@ use codex_config::types::SkillsConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverableType;
 use codex_config::types::Tui;
+use codex_config::types::ToolActivity;
 use codex_config::types::TuiKeymap;
 use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
@@ -398,8 +399,10 @@ consolidation_model = "gpt-5.2"
 
 #[tokio::test]
 async fn goal_max_token_budget_requires_positive_integer() {
-    let config_toml = toml::from_str::<ConfigToml>("[goals]\nmax_goal_token_budget = 25000\n")
-        .expect("positive goal token budget should deserialize");
+    let config_toml = toml::from_str::<ConfigToml>(
+        "[goals]\nmax_goal_token_budget = 25000\nmax_goal_length = 1234\n",
+    )
+    .expect("positive goal token budget should deserialize");
     let config = Config::load_from_base_config_with_overrides(
         config_toml,
         ConfigOverrides::default(),
@@ -408,7 +411,15 @@ async fn goal_max_token_budget_requires_positive_integer() {
     .await
     .expect("positive goal token budget should load");
     assert_eq!(config.max_goal_token_budget, Some(25_000));
+    assert_eq!(config.max_goal_length, 1234);
 
+    for invalid_length in ["0", "-1", "1.5", "\"100\""] {
+        let config = format!("[goals]\nmax_goal_length = {invalid_length}\n");
+        assert!(
+            toml::from_str::<ConfigToml>(&config).is_err(),
+            "invalid goal length should be rejected: {invalid_length}"
+        );
+    }
     for invalid in ["0", "-1", "1.5", "\"100\""] {
         let config = format!("[goals]\nmax_goal_token_budget = {invalid}\n");
         assert!(
@@ -1272,6 +1283,7 @@ fn config_toml_deserializes_model_availability_nux() {
             mouse_scroll_speed: None,
             copy_on_select: Default::default(),
             right_click_paste: Default::default(),
+            tool_activity: ToolActivity::default(),
             alternate_screen: AltScreenMode::default(),
             status_line: None,
             status_line_use_colors: true,
@@ -4415,6 +4427,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             mouse_scroll_speed: None,
             copy_on_select: Default::default(),
             right_click_paste: Default::default(),
+            tool_activity: ToolActivity::default(),
             alternate_screen: AltScreenMode::Auto,
             status_line: None,
             status_line_use_colors: true,
