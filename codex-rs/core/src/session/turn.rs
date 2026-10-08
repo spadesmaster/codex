@@ -11,6 +11,7 @@ use crate::compact_remote_v2::run_inline_remote_auto_compact_task as run_inline_
 use crate::connectors;
 use crate::context::ContextualUserFragment;
 use crate::context::UserVerificationNotice;
+use crate::context_manager::HistoryTrimConfig;
 use crate::cyber_access_program;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::feedback_tags;
@@ -521,9 +522,15 @@ pub(crate) async fn run_turn(
 
             // Construct the input that we will send to the model.
             let sampling_request_input: Vec<ResponseItem> = async {
-                sess.clone_history()
-                    .await
-                    .for_prompt(&step_context.settings.model_info.input_modalities)
+                sess.clone_history().await.for_prompt_with_trim(
+                    &step_context.settings.model_info.input_modalities,
+                    &HistoryTrimConfig {
+                        trim_success: step_context.turn.config.hide_tool_activity.trim_success,
+                        trim_failures: step_context.turn.config.hide_tool_activity.trim_failures,
+                        trim_warnings: step_context.turn.config.hide_tool_activity.trim_warnings,
+                        trim_after: step_context.turn.config.hide_tool_activity.trim_after,
+                    },
+                )
             }
             .instrument(trace_span!("run_turn.prepare_sampling_request_input"))
             .await;
@@ -1641,9 +1648,15 @@ async fn run_sampling_request(
         let prompt_input = if let Some(input) = initial_input.take() {
             input
         } else {
-            sess.clone_history()
-                .await
-                .for_prompt(&step_context.settings.model_info.input_modalities)
+            sess.clone_history().await.for_prompt_with_trim(
+                &step_context.settings.model_info.input_modalities,
+                &HistoryTrimConfig {
+                    trim_success: step_context.turn.config.hide_tool_activity.trim_success,
+                    trim_failures: step_context.turn.config.hide_tool_activity.trim_failures,
+                    trim_warnings: step_context.turn.config.hide_tool_activity.trim_warnings,
+                    trim_after: step_context.turn.config.hide_tool_activity.trim_after,
+                },
+            )
         };
         let mut prompt_input = prompt_input;
         sess.services
