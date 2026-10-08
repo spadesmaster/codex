@@ -5,12 +5,113 @@
 
 use super::*;
 use crate::exec_cell::CommandOutput;
+use std::fs::OpenOptions;
+use std::io::Write;
+
+/// Unified V3 tool-activity log line severity glyph: 🔴 failure (A3/A4), 🟡
+/// warning (A5/A4 sharing the same log-write site, per the Spec's format table).
+#[derive(Clone, Copy)]
+enum ToolActivitySeverity {
+    Failure,
+    Warning,
+}
+
+impl ToolActivitySeverity {
+    fn glyph(self) -> &'static str {
+        match self {
+            Self::Failure => "🔴",
+            Self::Warning => "🟡",
+        }
+    }
+}
+
+fn append_v3_tool_line(
+    path: &std::path::Path,
+    severity: ToolActivitySeverity,
+    tool: &str,
+    call_id: &str,
+    exit_code: i32,
+    message: &str,
+) {
+    let message: String = message
+        .replace(['\r', '\n'], " ")
+        .chars()
+        .take(400)
+        .collect();
+    let line = format!(
+        "{} {} 🧰{} 🔗{} 📝\"exit={} {}\"\n",
+        chrono::Local::now().format("%d-%b %H:%M:%S"),
+        severity.glyph(),
+        tool,
+        call_id,
+        exit_code,
+        message
+    );
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = file.write_all(line.as_bytes());
+    }
+}
+
+/// M135 A5/A8 warning marker for exec-command results: a case-insensitive
+/// `"warning"` token in the command's own aggregated output. See the longer
+/// rationale on `is_warning_output` in `core/src/context_manager/history.rs`
+/// (the A8 counterpart) for why this is new, additive mechanism rather than a
+/// reuse of an existing classification.
+///
+/// **False-positive narrowing (M135 gap-closure pass):** a plain substring
+/// check also matches a clean run's own "0 warnings"/"no warnings found"
+/// summary line, hiding output that reported nothing wrong. A line matching
+/// one of `ZERO_WARNING_PHRASES` does not itself count as the marker, but any
+/// *other* line in the same output that still contains "warning" does, so a
+/// real warning sitting next to an unrelated "0 warnings" summary is still
+/// caught. Kept behaviorally in sync with, but not code-shared with, the
+/// core crate's own copy (`is_warning_output` in
+/// `core/src/context_manager/history.rs`), matching how those two
+/// independent classifications are already duplicated across crates. This
+/// does not attempt every possible false-positive phrasing (e.g. reversed
+/// "warnings: 0") — narrowing further than the operator-cited examples would
+/// be inventing an unspecified heuristic, not closing the disclosed gap.
+const ZERO_WARNING_PHRASES: &[&str] = &[
+    "0 warnings",
+    "0 warning",
+    "no warnings",
+    "no warning",
+    "zero warnings",
+];
+
+fn contains_warning_marker(aggregated_output: &str) -> bool {
+    aggregated_output.lines().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("warning")
+            && !ZERO_WARNING_PHRASES
+                .iter()
+                .any(|phrase| lower.contains(phrase))
+    })
+}
 
 impl ChatWidget {
+    fn is_unified_exec_process_hidden(&self, process_id: &str) -> bool {
+        self.unified_exec_processes
+            .iter()
+            .find(|process| process.key == process_id)
+            .is_some_and(|process| self.hidden_exec_calls.contains(&process.call_id))
+    }
+
+    fn add_concise_exec_summary(&mut self, command: &[String]) {
+        let summary = command.join(" ");
+        if !summary.is_empty() {
+            self.add_info_message(format!("Completed: {summary}"), None);
+        }
+    }
+
     pub(super) fn flush_unified_exec_wait_streak(&mut self) {
         let Some(wait) = self.unified_exec_wait_streak.take() else {
             return;
         };
+        if self.is_unified_exec_process_hidden(&wait.process_id) {
+            self.restore_reasoning_status_header();
+            return;
+        }
         let cell = history_cell::new_unified_exec_interaction(wait.command_display, String::new());
         if let Err(cell) = self.absorb_activity_detail(Box::new(cell)) {
             self.app_event_tx.send(AppEvent::InsertHistoryCell(cell));
@@ -35,6 +136,15 @@ impl ChatWidget {
         if is_unified_exec_source(*source) {
             if *source == ExecCommandSource::UnifiedExecStartup {
                 self.track_unified_exec_process_begin(id, process_id.as_deref(), command);
+            }
+            // Latch hidden calls before early returns so completion bookkeeping stays paired.
+            // A non-standard (`ParsedCommand::Unknown`) unified-exec command — e.g. `sleep`,
+            // `cargo test`, `just fix` — never reaches `handle_command_execution_started_now`
+            // (see the `is_standard_tool_call` early return), so without this the wait/interaction
+            // suppression in `flush_unified_exec_wait_streak`/`on_terminal_interaction` would never
+            // find the call latched and would leak a transcript row while hidden.
+            if !self.should_render_exec_activity(*source) {
+                self.hidden_exec_calls.insert(id.clone());
             }
             if !self.bottom_pane.is_task_running() {
                 return;
@@ -125,10 +235,12 @@ impl ChatWidget {
             {
                 self.flush_unified_exec_wait_streak();
             }
-            self.add_to_history(history_cell::new_unified_exec_interaction(
-                command_display,
-                stdin,
-            ));
+            if !self.is_unified_exec_process_hidden(&process_id) {
+                self.add_to_history(history_cell::new_unified_exec_interaction(
+                    command_display,
+                    stdin,
+                ));
+            }
         }
     }
 
@@ -156,11 +268,9 @@ impl ChatWidget {
                 return;
             }
         }
-        self.defer_or_handle(
-            item,
-            InterruptManager::push_item_completed,
-            Self::handle_command_execution_completed_now,
-        );
+        self.defer_or_handle(item, InterruptManager::push_item_completed, |this, item| {
+            this.handle_command_execution_completed_now(item, false)
+        });
     }
 
     pub(super) fn track_unified_exec_process_begin(
@@ -264,6 +374,10 @@ impl ChatWidget {
                 source,
             },
         );
+        if !self.should_render_exec_activity(source) {
+            self.hidden_exec_calls.insert(id);
+            return;
+        }
         let is_wait_interaction = matches!(source, ExecCommandSource::UnifiedExecInteraction);
         let command_display = command.join(" ");
         let should_suppress_unified_wait = is_wait_interaction
@@ -319,7 +433,11 @@ impl ChatWidget {
     /// standalone history entry instead of replacing or flushing the unrelated active exploring
     /// cell. If this method treated every unknown end as "complete the active cell", the UI could
     /// merge unrelated commands and hide still-running exploring work.
-    pub(crate) fn handle_command_execution_completed_now(&mut self, item: ThreadItem) {
+    pub(crate) fn handle_command_execution_completed_now(
+        &mut self,
+        item: ThreadItem,
+        from_replay: bool,
+    ) {
         enum ExecEndTarget {
             // Normal case: the active exec cell already tracks this call id.
             ActiveTracked,
@@ -359,7 +477,51 @@ impl ChatWidget {
         let aggregated_output = aggregated_output.unwrap_or_default();
 
         let running = self.running_commands.remove(&id);
-        if self.suppressed_exec_calls.remove(&id) {
+        // Retain terminal hidden/suppressed markers so duplicate completion events cannot render or log again.
+        let was_hidden = self.hidden_exec_calls.contains(&id);
+        let already_suppressed = self.suppressed_exec_calls.contains(&id);
+        let routine_success = status
+            == codex_app_server_protocol::CommandExecutionStatus::Completed
+            && exit_code == 0;
+        // A5-HideWarn precedence fix (2026-09-29, operator-direct: "write a test proving A5's
+        // hide_warnings works during replay"): a warning-marked result is ALSO `routine_success`
+        // by the definition above (both require `status == Completed`), so it could otherwise take
+        // the M26 `tool_activity` shortcuts immediately below - showing a concise summary from a
+        // DIFFERENT, independent config surface - before ever reaching A5's own `hide_warnings`
+        // check further down. Computed here, using the still-unshadowed incoming `source`/
+        // `aggregated_output` (the `let (command, parsed, source) = match running {...}` rebinding
+        // a few lines down would otherwise change which `source` is in scope), specifically to keep
+        // A5's own configured intent from being silently overridden by an unrelated mechanism.
+        // Confirmed as a real, live bug (not just a theoretical interaction) by
+        // `hide_warnings_wins_over_concise_summary_during_replay` in tests/exec_flow.rs, which
+        // failed before this fix and passes after it.
+        let warning_marked_early = source != ExecCommandSource::UnifiedExecStartup
+            && source != ExecCommandSource::UserShell
+            && routine_success
+            && contains_warning_marker(&aggregated_output);
+        let warning_hidden_early = warning_marked_early && self.config.hide_tool_activity.hide_warnings;
+        if from_replay
+            && !self.should_render_exec_activity(source)
+            && routine_success
+            && !warning_hidden_early
+        {
+            if self.tool_activity == ToolActivity::Concise {
+                self.add_concise_exec_summary(&event_command);
+            }
+            self.transcript.had_work_activity = true;
+            return;
+        }
+        let hidden_requires_reclassification = was_hidden
+            && ((status != codex_app_server_protocol::CommandExecutionStatus::Completed || exit_code != 0)
+                && source != ExecCommandSource::UserShell
+                && source != ExecCommandSource::UnifiedExecStartup
+                && self.config.hide_tool_activity.hide_failures
+                || warning_hidden_early);
+        if was_hidden && !hidden_requires_reclassification {
+            if routine_success && self.tool_activity == ToolActivity::Concise {
+                self.add_concise_exec_summary(&event_command);
+            }
+            self.transcript.had_work_activity = true;
             return;
         }
         let (command, parsed, source) = match running {
@@ -370,6 +532,105 @@ impl ChatWidget {
         let is_unified_exec_interaction =
             matches!(source, ExecCommandSource::UnifiedExecInteraction);
         let is_user_shell = source == ExecCommandSource::UserShell;
+        let failed_ordinary_result = source != ExecCommandSource::UserShell
+            && source != ExecCommandSource::UnifiedExecStartup
+            && status != codex_app_server_protocol::CommandExecutionStatus::Declined
+            && (status == codex_app_server_protocol::CommandExecutionStatus::Failed
+                || (status == codex_app_server_protocol::CommandExecutionStatus::Completed
+                    && exit_code != 0));
+        // M135 A5/A8 warning marker (see `is_warning_output` in core's history.rs for the
+        // full rationale): no dedicated warning classification exists elsewhere in this
+        // fork, so a completed, non-failed exec result whose own output explicitly
+        // contains a "warning" marker is treated as the warning class. Mutually
+        // exclusive with `failed_ordinary_result` by construction.
+        let warning_ordinary_result = !failed_ordinary_result
+            && source != ExecCommandSource::UserShell
+            && source != ExecCommandSource::UnifiedExecStartup
+            && status == codex_app_server_protocol::CommandExecutionStatus::Completed
+            && contains_warning_marker(&aggregated_output);
+
+        if already_suppressed
+            && !((failed_ordinary_result && self.config.hide_tool_activity.hide_failures)
+                || (warning_ordinary_result && self.config.hide_tool_activity.hide_warnings))
+        {
+            return;
+        }
+
+        if failed_ordinary_result && self.config.hide_tool_activity.hide_failures {
+            let first_suppression = self.suppressed_exec_calls.insert(id.clone());
+            if first_suppression {
+                if let Some(path) = self.config.hide_tool_activity.tool_error_log.as_deref() {
+                    append_v3_tool_line(
+                        path,
+                        ToolActivitySeverity::Failure,
+                        "exec_command",
+                        &id,
+                        exit_code,
+                        &aggregated_output,
+                    );
+                }
+            }
+            let removed = self
+                .transcript
+                .active_cell
+                .as_mut()
+                .and_then(|cell| cell.as_any_mut().downcast_mut::<ExecCell>())
+                .is_some_and(|cell| cell.remove_call(&id));
+            if removed {
+                let empty = self
+                    .transcript
+                    .active_cell
+                    .as_ref()
+                    .and_then(|cell| cell.as_any().downcast_ref::<ExecCell>())
+                    .is_some_and(ExecCell::is_empty);
+                if empty {
+                    let _ = self.transcript.take_active_cell();
+                } else {
+                    self.bump_active_cell_revision();
+                }
+                self.request_redraw();
+            }
+            return;
+        }
+        // A5-HideWarn: same mute shape as A3 above, keyed to the warning marker instead
+        // of the failure classification. Display suppressed here; model output (the
+        // ResponseItem sent to the model) is unaffected, matching A3's contract.
+        if warning_ordinary_result && self.config.hide_tool_activity.hide_warnings {
+            let first_suppression = self.suppressed_exec_calls.insert(id.clone());
+            if first_suppression {
+                if let Some(path) = self.config.hide_tool_activity.tool_error_log.as_deref() {
+                    append_v3_tool_line(
+                        path,
+                        ToolActivitySeverity::Warning,
+                        "exec_command",
+                        &id,
+                        exit_code,
+                        &aggregated_output,
+                    );
+                }
+            }
+            let removed = self
+                .transcript
+                .active_cell
+                .as_mut()
+                .and_then(|cell| cell.as_any_mut().downcast_mut::<ExecCell>())
+                .is_some_and(|cell| cell.remove_call(&id));
+            if removed {
+                let empty = self
+                    .transcript
+                    .active_cell
+                    .as_ref()
+                    .and_then(|cell| cell.as_any().downcast_ref::<ExecCell>())
+                    .is_some_and(ExecCell::is_empty);
+                if empty {
+                    let _ = self.transcript.take_active_cell();
+                } else {
+                    self.bump_active_cell_revision();
+                }
+                self.request_redraw();
+            }
+            return;
+        }
         // Completion-only replay has no begin event to join adjacent exploration. Extend only
         // a finished, compatible group; an unrelated running group must retain orphan routing.
         if let Some(cell) = self
