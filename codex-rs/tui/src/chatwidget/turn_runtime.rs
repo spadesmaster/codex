@@ -181,6 +181,7 @@ impl ChatWidget {
         self.update_task_running_state();
         self.running_commands.clear();
         self.suppressed_exec_calls.clear();
+        self.hidden_exec_calls.clear();
         self.last_unified_wait = None;
         self.unified_exec_wait_streak = None;
         if !from_replay {
@@ -340,6 +341,7 @@ impl ChatWidget {
         self.update_task_running_state();
         self.running_commands.clear();
         self.suppressed_exec_calls.clear();
+        self.hidden_exec_calls.clear();
         self.last_unified_wait = None;
         self.unified_exec_wait_streak = None;
         self.adaptive_chunking.reset();
