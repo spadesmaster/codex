@@ -3728,6 +3728,92 @@ async fn raw_slash_command_reports_usage_for_invalid_arg() {
 }
 
 #[tokio::test]
+async fn slash_tool_activity_off_sets_state_and_reports_shown() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command_with_args(SlashCommand::ToolActivity, "off".to_string(), Vec::new());
+
+    assert_eq!(chat.tool_activity_level(), ToolActivity::Off);
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Tool activity: shown"));
+}
+
+#[tokio::test]
+async fn slash_tool_activity_status_does_not_mutate_state() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_tool_activity_level(ToolActivity::Concise);
+
+    chat.dispatch_command_with_args(SlashCommand::ToolActivity, "status".to_string(), Vec::new());
+
+    assert_eq!(chat.tool_activity_level(), ToolActivity::Concise);
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Tool activity: concise"));
+}
+
+#[tokio::test]
+async fn slash_tool_activity_supports_all_levels_bare_status_and_invalid_args() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    for (arg, expected, notice) in [
+        ("off", ToolActivity::Off, "Tool activity: shown"),
+        ("concise", ToolActivity::Concise, "Tool activity: concise"),
+        ("quiet", ToolActivity::Quiet, "Tool activity: quiet"),
+    ] {
+        chat.dispatch_command_with_args(SlashCommand::ToolActivity, arg.to_string(), Vec::new());
+        assert_eq!(chat.tool_activity_level(), expected);
+        let rendered = drain_insert_history(&mut rx)
+            .iter()
+            .map(|lines| lines_to_single_string(lines))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            rendered.contains(notice),
+            "expected {notice:?}, got {rendered:?}"
+        );
+    }
+
+    chat.dispatch_command(SlashCommand::ToolActivity);
+    assert_eq!(chat.tool_activity_level(), ToolActivity::Quiet);
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Tool activity: quiet"));
+
+    chat.dispatch_command_with_args(
+        SlashCommand::ToolActivity,
+        "invalid".to_string(),
+        Vec::new(),
+    );
+    assert_eq!(chat.tool_activity_level(), ToolActivity::Quiet);
+    let rendered = drain_insert_history(&mut rx)
+        .iter()
+        .map(|lines| lines_to_single_string(lines))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(rendered.contains("Usage: /tool-activity [off|concise|quiet|status]"));
+}
+
+#[tokio::test]
+async fn tool_activity_slash_command_dispatches_from_composer_during_active_task() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    handle_turn_started(&mut chat, "turn-1");
+
+    submit_composer_text(&mut chat, "/tool-activity quiet");
+
+    assert_eq!(chat.tool_activity_level(), ToolActivity::Quiet);
+}
+
+#[tokio::test]
 async fn compact_queues_user_messages_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::new());

@@ -48,6 +48,7 @@ pub enum SlashCommand {
     Copy,
     Export,
     Raw,
+    ToolActivity,
     Tui,
     Diff,
     Mention,
@@ -108,6 +109,7 @@ impl SlashCommand {
             SlashCommand::Copy => "copy the last response or part of it",
             SlashCommand::Export => "export the conversation as markdown",
             SlashCommand::Raw => "toggle raw scrollback mode for copy-friendly terminal selection",
+            SlashCommand::ToolActivity => "set tool activity visibility: off, concise, or quiet",
             SlashCommand::Tui => "choose the TUI mode for the next launch",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Mention => "mention a file",
@@ -181,6 +183,7 @@ impl SlashCommand {
                 | SlashCommand::Mcp
                 | SlashCommand::Export
                 | SlashCommand::Raw
+                | SlashCommand::ToolActivity
                 | SlashCommand::Cd
                 | SlashCommand::Pwd
                 | SlashCommand::Usage
@@ -270,6 +273,7 @@ impl SlashCommand {
             | SlashCommand::Permissions
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::ToolActivity
             | SlashCommand::Rename
             | SlashCommand::Mention
             | SlashCommand::Skills
@@ -365,5 +369,14 @@ mod tests {
             SlashCommand::from_str("approve"),
             Ok(SlashCommand::AutoReview)
         );
+    }
+
+    #[test]
+    fn tool_activity_command_is_registered_and_available_during_task() {
+        let command = SlashCommand::from_str("tool-activity").expect("tool-activity command");
+
+        assert_eq!(command.command(), "tool-activity");
+        assert!(command.supports_inline_args());
+        assert!(command.available_during_task());
     }
 }

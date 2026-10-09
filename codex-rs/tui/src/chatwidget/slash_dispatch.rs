@@ -502,6 +502,10 @@ impl ChatWidget {
                 let enabled = self.toggle_raw_output_mode_and_notify();
                 self.emit_raw_output_mode_changed(enabled);
             }
+            SlashCommand::ToolActivity => self.add_info_message(
+                Self::tool_activity_notice(self.tool_activity_level()).to_string(),
+                /*hint*/ None,
+            ),
             SlashCommand::Tui => self.show_tui_mode_picker(),
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
@@ -887,6 +891,18 @@ impl ChatWidget {
                     self.emit_raw_output_mode_changed(/*enabled*/ false);
                 }
                 _ => self.add_error_message(RAW_USAGE.to_string()),
+            },
+            SlashCommand::ToolActivity => match trimmed.to_ascii_lowercase().as_str() {
+                "" | "status" => self.add_info_message(
+                    Self::tool_activity_notice(self.tool_activity_level()).to_string(),
+                    /*hint*/ None,
+                ),
+                "off" => self.set_tool_activity_level_and_notify(ToolActivity::Off),
+                "concise" => self.set_tool_activity_level_and_notify(ToolActivity::Concise),
+                "quiet" => self.set_tool_activity_level_and_notify(ToolActivity::Quiet),
+                _ => self.add_error_message(
+                    "Usage: /tool-activity [off|concise|quiet|status]".to_string(),
+                ),
             },
             SlashCommand::Rename if !trimmed.is_empty() => {
                 if !self.ensure_thread_rename_allowed() {
@@ -1280,6 +1296,7 @@ impl ChatWidget {
             | SlashCommand::Rollout
             | SlashCommand::Copy
             | SlashCommand::Raw
+            | SlashCommand::ToolActivity
             | SlashCommand::Vim
             | SlashCommand::Daybreak
             | SlashCommand::Diff
