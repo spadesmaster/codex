@@ -422,6 +422,124 @@ declined
 }
 
 #[tokio::test]
+async fn replay_tool_activity_hides_only_routine_success_at_each_level() {
+    for (level, expected_cells) in [
+        (ToolActivity::Off, 3),
+        (ToolActivity::Concise, 3),
+        (ToolActivity::Quiet, 2),
+    ] {
+        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+        chat.set_tool_activity_level(level);
+        let cwd = chat.config.cwd.clone();
+        let command = |id: &str,
+                       output: &str,
+                       status: AppServerCommandExecutionStatus,
+                       exit_code: Option<i32>| {
+            AppServerThreadItem::CommandExecution {
+                model_context: None,
+                sandbox_type: None,
+                id: id.to_string(),
+                command: format!("printf {output}"),
+                cwd: cwd.clone().into(),
+                process_id: None,
+                plugin_id: None,
+                script_path: None,
+                source: ExecCommandSource::Agent,
+                status,
+                command_actions: Vec::new(),
+                aggregated_output: Some(format!("{output}\n")),
+                exit_code,
+                duration_ms: Some(5),
+            }
+        };
+        let turn = AppServerTurn {
+            items: vec![
+                command(
+                    "routine-success",
+                    "routine",
+                    AppServerCommandExecutionStatus::Completed,
+                    Some(0),
+                ),
+                command(
+                    "failure",
+                    "failure",
+                    AppServerCommandExecutionStatus::Failed,
+                    Some(7),
+                ),
+                command(
+                    "declined",
+                    "declined",
+                    AppServerCommandExecutionStatus::Declined,
+                    None,
+                ),
+            ],
+            ..app_server_turn(
+                "turn-1",
+                AppServerTurnStatus::Completed,
+                /*duration_ms*/ None,
+                /*error*/ None,
+            )
+        };
+
+        chat.replay_thread_turns(vec![turn], ReplayKind::ResumeInitialMessages);
+
+        let cells = std::iter::from_fn(|| rx.try_recv().ok())
+            .filter_map(|event| match event {
+                AppEvent::InsertHistoryCell(cell) => Some(cell),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            cells.len(),
+            expected_cells,
+            "unexpected replay cells for {level:?}"
+        );
+        let transcript = cells
+            .iter()
+            .map(|cell| lines_to_single_string(&cell.transcript_lines(/*width*/ 80)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            transcript.contains("failure"),
+            "failure missing for {level:?}"
+        );
+        assert!(
+            transcript.contains("✗ (7)"),
+            "failure status missing for {level:?}"
+        );
+        assert!(
+            transcript.contains("declined"),
+            "declined missing for {level:?}"
+        );
+        assert!(
+            transcript.contains("✗ (1)"),
+            "declined status missing for {level:?}"
+        );
+        match level {
+            ToolActivity::Off => {
+                assert!(
+                    transcript.contains("routine\n✓"),
+                    "routine output missing for off"
+                );
+            }
+            ToolActivity::Concise => {
+                assert!(
+                    transcript.contains("Completed: printf routine"),
+                    "concise summary missing"
+                );
+                assert!(
+                    !transcript.contains("routine\n✓"),
+                    "routine output visible for concise"
+                );
+            }
+            ToolActivity::Quiet => {
+                assert!(!transcript.contains("routine"), "routine visible for quiet");
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn unified_exec_begin_restores_status_indicator_after_preamble() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 
