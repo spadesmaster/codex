@@ -158,6 +158,9 @@ def resolve_input_path(
 
 
 def is_executable(path: Path) -> bool:
+    if os.name == "nt":
+        # Windows hosts have no POSIX exec bit; an existing file is runnable.
+        return path.is_file()
     return bool(path.stat().st_mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH))
 
 
