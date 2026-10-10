@@ -310,7 +310,7 @@ impl ChatWidget {
     pub(crate) fn handle_queued_item_completed_now(&mut self, item: ThreadItem) {
         match item {
             item @ ThreadItem::CommandExecution { .. } => {
-                self.handle_command_execution_completed_now(item);
+                self.handle_command_execution_completed_now(item, false);
             }
             item @ ThreadItem::FileChange { .. } => self.handle_file_change_completed_now(item),
             item @ ThreadItem::McpToolCall { .. } => self.handle_mcp_tool_call_completed_now(item),

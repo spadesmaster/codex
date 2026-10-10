@@ -10,8 +10,11 @@ from .cargo import build_source_binaries
 from .layout import build_package_dir
 from .layout import prepare_package_dir
 from .layout import validate_package_dir
+from .receipt import RECEIPT_NAME
+from .receipt import write_build_receipt
 from .ripgrep import resolve_rg_bin
 from .targets import PACKAGE_VARIANTS
+from .targets import REPO_ROOT
 from .targets import TARGET_SPECS
 from .targets import PackageInputs
 from .targets import default_target
@@ -227,6 +230,13 @@ def main() -> int:
     build_package_dir(package_dir, args.package_version, variant, spec, inputs)
     validate_package_dir(
         package_dir, variant, spec, include_zsh=inputs.zsh_bin is not None
+    )
+    receipt = write_build_receipt(
+        package_dir, repo_root=REPO_ROOT, version=args.package_version
+    )
+    print(
+        f"Wrote build receipt {RECEIPT_NAME} sha256={receipt['receiptSha256']} "
+        f"revision={receipt['sourceRevision']} dirty={receipt['sourceDirty']}"
     )
 
     for archive_output in args.archive_output:

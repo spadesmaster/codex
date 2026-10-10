@@ -121,6 +121,7 @@ use codex_config::Constrained;
 use codex_config::ConstraintResult;
 use codex_config::types::ApprovalsReviewer;
 use codex_config::types::Notifications;
+use codex_config::types::ToolActivity;
 use codex_connectors::AppInfo;
 use codex_features::Feature;
 use codex_git_utils::current_branch_name;
@@ -523,6 +524,14 @@ pub(crate) struct ChatWidget {
     config: Config,
     pub(crate) local_settings: crate::local_settings::LocalSettings,
     raw_output_mode: bool,
+    /// Runtime tool-activity level controlling presentation of tool activity.
+    tool_activity: ToolActivity,
+    /// Runtime tool-activity level (off/concise/quiet). Presentation-only: `concise` and
+    /// `quiet` hide routine successful tool transcript cells while preserving user content,
+    /// failures, warnings, approvals, declines, and control records. Independent of the initial
+    /// config value, so `/tool-activity` can be toggled without rewriting config. Never affects
+    /// live interactive approval prompts, which render through a separate
+    /// `bottom_pane::ApprovalRequest` widget system, not the transcript.
     /// Runtime value resolved by core. `config.service_tier` remains the explicit user choice.
     effective_service_tier: Option<String>,
     /// The unmasked collaboration mode settings (always Default mode).
@@ -602,8 +611,15 @@ pub(crate) struct ChatWidget {
     collab_agent_metadata: HashMap<ThreadId, AgentMetadata>,
     pending_collab_spawn_requests: HashMap<String, multi_agents::SpawnRequestSummary>,
     suppressed_exec_calls: HashSet<String>,
-    /// Per-call tool-activity visibility latch. Hidden calls remain hidden through completion.
+    /// Per-call tool-activity visibility latch (distinct from suppressed_exec_calls, which exists
+    /// for unified-wait dedup and must not be overloaded with a second meaning). A call hidden at
+    /// start stays hidden through completion even if /tool-activity toggles mid-flight; a call
+    /// visible at start stays visible.
     hidden_exec_calls: HashSet<String>,
+    /// Per-call tool-activity visibility latch for MCP tool calls, mirroring hidden_exec_calls.
+    hidden_mcp_calls: HashSet<String>,
+    /// Per-call tool-activity visibility latch for web-search calls, mirroring hidden_exec_calls.
+    hidden_web_search_calls: HashSet<String>,
     skills_all: Vec<SkillMetadata>,
     skills_initial_state: Option<HashMap<PathUri, bool>>,
     last_unified_wait: Option<UnifiedExecWaitState>,
@@ -1678,6 +1694,59 @@ impl ChatWidget {
             /*hint*/ None,
         );
     }
+
+    pub(crate) fn tool_activity_level(&self) -> ToolActivity {
+        self.tool_activity
+    }
+
+    pub(crate) fn set_tool_activity_level(&mut self, level: ToolActivity) {
+        self.tool_activity = level;
+        self.refresh_status_surfaces();
+    }
+
+    pub(crate) fn tool_activity_notice(level: ToolActivity) -> &'static str {
+        match level {
+            ToolActivity::Off => "Tool activity: shown",
+            ToolActivity::Concise => "Tool activity: concise (routine summaries)",
+            ToolActivity::Quiet => {
+                "Tool activity: quiet (default; routine hidden; use /tool-activity off for full output)"
+            }
+        }
+    }
+
+    pub(crate) fn set_tool_activity_level_and_notify(&mut self, level: ToolActivity) {
+        self.set_tool_activity_level(level);
+        self.add_info_message(
+            Self::tool_activity_notice(level).to_string(),
+            /*hint*/ None,
+        );
+    }
+
+    /// Whether routine (non-failure) tool activity has no transcript cell. Concise callers emit a
+    /// compact summary before using this predicate; Quiet callers remain completely silent.
+    pub(crate) fn hides_routine(&self) -> bool {
+        !matches!(self.tool_activity, ToolActivity::Off)
+    }
+
+    pub(crate) fn add_concise_tool_activity_summary(&mut self, summary: impl Into<String>) {
+        if self.tool_activity == ToolActivity::Concise {
+            self.add_info_message(summary.into(), None);
+        }
+    }
+
+    /// Whether a command execution from `source` should render its routine transcript activity.
+    /// User-run shell commands always render; every other exec source is presentation-hidden
+    /// at `Concise` and `Quiet`. Failure/decline visibility is retained separately at completion
+    /// time (keyed on protocol status, never on this source check).
+    pub(crate) fn should_render_exec_activity(&self, source: ExecCommandSource) -> bool {
+        matches!(self.tool_activity, ToolActivity::Off) || source == ExecCommandSource::UserShell
+    }
+
+    /// Whether a Failed/Declined status or other error/failure transcript surface should render.
+    /// Failures and safety signals remain visible at every configured level; only routine successful
+    /// activity is hidden at `Concise` and `Quiet`. Never governs live
+    /// interactive approval prompts — those render through a separate widget system, not the
+    /// transcript.
 
     pub(crate) fn toggle_raw_output_mode_and_notify(&mut self) -> bool {
         let enabled = !self.raw_output_mode;

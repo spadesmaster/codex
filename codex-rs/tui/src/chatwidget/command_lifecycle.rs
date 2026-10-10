@@ -508,20 +508,21 @@ impl ChatWidget {
             if self.tool_activity == ToolActivity::Concise {
                 self.add_concise_exec_summary(&event_command);
             }
-            self.transcript.had_work_activity = true;
             return;
         }
+        // A call hidden at start needs completion classification when it becomes a failure or
+        // warning. The explicit M135 flags below then decide whether it is muted/logged; never
+        // let ToolActivity itself hide a safety-relevant completion.
         let hidden_requires_reclassification = was_hidden
-            && ((status != codex_app_server_protocol::CommandExecutionStatus::Completed || exit_code != 0)
+            && (((status != codex_app_server_protocol::CommandExecutionStatus::Completed
+                || exit_code != 0)
                 && source != ExecCommandSource::UserShell
-                && source != ExecCommandSource::UnifiedExecStartup
-                && self.config.hide_tool_activity.hide_failures
-                || warning_hidden_early);
+                && source != ExecCommandSource::UnifiedExecStartup)
+                || warning_marked_early);
         if was_hidden && !hidden_requires_reclassification {
             if routine_success && self.tool_activity == ToolActivity::Concise {
                 self.add_concise_exec_summary(&event_command);
             }
-            self.transcript.had_work_activity = true;
             return;
         }
         let (command, parsed, source) = match running {
