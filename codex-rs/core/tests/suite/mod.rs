@@ -111,6 +111,7 @@ mod guardian_review;
 mod guardian_review_cancellation;
 #[cfg(not(target_os = "windows"))]
 mod guardian_subagent_authorization;
+mod history_trim;
 #[cfg(not(target_os = "windows"))]
 mod hooks;
 #[cfg(not(target_os = "windows"))]

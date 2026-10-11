@@ -4101,12 +4101,19 @@ pub enum ThreadGoalStatus {
 pub const MAX_THREAD_GOAL_OBJECTIVE_CHARS: usize = 4_000;
 
 pub fn validate_thread_goal_objective(value: &str) -> Result<(), String> {
+    validate_thread_goal_objective_with_max_length(value, MAX_THREAD_GOAL_OBJECTIVE_CHARS)
+}
+
+pub fn validate_thread_goal_objective_with_max_length(
+    value: &str,
+    max_length: usize,
+) -> Result<(), String> {
     if value.is_empty() {
         return Err("goal objective must not be empty".to_string());
     }
-    if value.chars().count() > MAX_THREAD_GOAL_OBJECTIVE_CHARS {
+    if value.chars().count() > max_length {
         return Err(format!(
-            "goal objective must be at most {MAX_THREAD_GOAL_OBJECTIVE_CHARS} characters"
+            "goal objective must be at most {max_length} characters"
         ));
     }
     Ok(())

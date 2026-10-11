@@ -3,6 +3,8 @@
 import os
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from .targets import REPO_ROOT
@@ -63,11 +65,14 @@ def build_source_binaries(
         for binary in binaries:
             cmd.extend(["--bin", binary])
 
-        cargo_env = None
+        cargo_env = dict(os.environ)
         if entrypoint_bin is None or code_mode_host_bin is None:
             codex_v8_env = resolve_codex_v8_cargo_env(spec)
             if codex_v8_env:
-                cargo_env = {**os.environ, **codex_v8_env}
+                cargo_env.update(codex_v8_env)
+        cargo_env["CODEX_BUILD_TIMESTAMP"] = datetime.now(ZoneInfo("America/New_York")).strftime(
+            "PHX %H:%M %d-%b"
+        )
 
         print("+", " ".join(cmd))
         subprocess.run(

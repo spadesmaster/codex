@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -112,6 +114,42 @@ class SourceBinariesForTargetTest(unittest.TestCase):
         self.assertEqual(outputs.code_mode_host_bin, code_mode_host)
         self.assertEqual(outputs.codex_command_runner_bin, command_runner)
         self.assertEqual(outputs.codex_windows_sandbox_setup_bin, sandbox_setup)
+
+    def test_source_build_passes_phx_stamp_to_cargo(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            captured = {}
+
+            def fake_run(*args, **kwargs) -> None:
+                captured["env"] = kwargs["env"]
+                for name in [
+                    "codex.exe",
+                    "codex-code-mode-host.exe",
+                    "codex-command-runner.exe",
+                    "codex-windows-sandbox-setup.exe",
+                ]:
+                    touch_file(output_dir / name)
+
+            with (
+                patch("codex_package.cargo.cargo_profile_output_dir", return_value=output_dir),
+                patch("codex_package.cargo.resolve_codex_v8_cargo_env", return_value={}),
+                patch("codex_package.cargo.subprocess.run", side_effect=fake_run),
+                patch.dict("os.environ", {"CODEX_BUILD_TIMESTAMP": "INHERITED_STAMP"}),
+            ):
+                build_source_binaries(
+                    TARGET_SPECS["x86_64-pc-windows-msvc"],
+                    PACKAGE_VARIANTS["codex"],
+                    cargo="cargo",
+                    profile="release",
+                    entrypoint_bin=None,
+                    code_mode_host_bin=None,
+                    bwrap_bin=None,
+                    codex_command_runner_bin=None,
+                    codex_windows_sandbox_setup_bin=None,
+                )
+
+        self.assertIsNotNone(captured["env"])
+        self.assertRegex(captured["env"]["CODEX_BUILD_TIMESTAMP"], r"^PHX \d{2}:\d{2} \d{2}-[A-Z][a-z]{2}$")
 
 
 def touch_file(path: Path) -> Path:

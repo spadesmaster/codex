@@ -39,7 +39,7 @@ code-mode-host *args:
 # Assemble a local Codex package.
 [no-cd]
 assemble-codex-package *args:
-    {{ python }} {{ justfile_directory() }}/scripts/build_codex_package.py {args}
+    {{ python }} {{ justfile_directory() }}/scripts/build_codex_package.py {{args}}
 
 # Build the CLI and run the app-server test client
 app-server-test-client *args:

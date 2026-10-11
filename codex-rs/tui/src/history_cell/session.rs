@@ -40,6 +40,12 @@ pub(crate) fn with_border_with_inner_width(
     out
 }
 
+/// Build receipt rendered in the startup header for acceptance-proof capture.
+pub(crate) const BUILD_STAMP: &str = match option_env!("CODEX_BUILD_TIMESTAMP") {
+    Some(stamp) => stamp,
+    None => "PHX UNSTAMPED",
+};
+
 /// Brand title shared by the session header and the status card; each owns its own indentation.
 pub(crate) fn codex_title(version: &str) -> Vec<Span<'static>> {
     vec![
@@ -342,11 +348,7 @@ impl HistoryCell for SessionHeaderHistoryCell {
         let mut lines = vec![
             Line::default(),
             Line::from(title),
-            Line::from(vec![
-                "     ".into(),
-                self.format_directory(Some(width.saturating_sub(/*rhs*/ 5)))
-                    .dim(),
-            ]),
+            Line::from(vec!["     ".into(), BUILD_STAMP.dim()]),
         ];
         if self.yolo_mode {
             lines.push(Line::from(vec![

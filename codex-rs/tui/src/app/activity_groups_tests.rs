@@ -83,11 +83,10 @@ async fn older_page_hydration_keeps_pending_computer_and_exploration_completion(
                 ));
             }
             ActivityKind::Exploration => {
-                app.chat_widget.handle_command_execution_completed_now(call(
-                    "newer",
-                    kind,
-                    "completed",
-                ));
+                app.chat_widget.handle_command_execution_completed_now(
+                    call("newer", kind, "completed"),
+                    false,
+                );
                 app.chat_widget.handle_command_execution_started_now(call(
                     "pending",
                     kind,
@@ -125,7 +124,7 @@ async fn older_page_hydration_keeps_pending_computer_and_exploration_completion(
             )),
             ActivityKind::Exploration => app
                 .chat_widget
-                .handle_command_execution_completed_now(call("pending", kind, "completed")),
+                .handle_command_execution_completed_now(call("pending", kind, "completed"), false),
         }
         current.items[3] = call("pending", kind, "completed");
         let expected = project(&app, &current.items);

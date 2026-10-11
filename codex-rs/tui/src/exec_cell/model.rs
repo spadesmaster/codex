@@ -209,6 +209,15 @@ impl ExecCell {
         self.group.calls.iter()
     }
 
+    pub(crate) fn remove_call(&mut self, call_id: &str) -> bool {
+        let before = self.group.calls.len();
+        self.group.calls.retain(|call| call.call_id != call_id);
+        self.group.calls.len() != before
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.group.calls.is_empty()
+    }
     pub(crate) fn append_output(&mut self, call_id: &str, chunk: &str) -> bool {
         if chunk.is_empty() {
             return false;

@@ -20,6 +20,31 @@
 // second one exists — not just that the isolated function can do it.
 
 use anyhow::Result;
+use std::future::Future;
+
+const LARGE_TEST_STACK_BYTES: usize = 8 * 1024 * 1024;
+
+fn run_on_large_stack<F, Fut>(test: F) -> Result<()>
+where
+    F: FnOnce() -> Fut + Send + 'static,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    let worker = std::thread::Builder::new()
+        .name("history-trim-integration-test".to_owned())
+        .stack_size(LARGE_TEST_STACK_BYTES)
+        .spawn(move || {
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .worker_threads(2)
+                .thread_stack_size(LARGE_TEST_STACK_BYTES)
+                .build()?
+                .block_on(test())
+        })?;
+    match worker.join() {
+        Ok(result) => result,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
+}
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_exec_command_call;
@@ -30,105 +55,107 @@ use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::test_codex;
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn trim_success_removes_oldest_pair_at_both_real_call_sites() -> Result<()> {
-    skip_if_no_network!(Ok(()));
+#[test]
+fn trim_success_removes_oldest_pair_at_both_real_call_sites() -> Result<()> {
+    run_on_large_stack(|| async {
+        skip_if_no_network!(Ok(()));
 
-    let server = start_mock_server().await;
+        let server = start_mock_server().await;
 
-    let call_a = "history-trim-call-a";
-    let call_b = "history-trim-call-b";
+        let call_a = "history-trim-call-a";
+        let call_b = "history-trim-call-b";
 
-    // Turn 1, round 1 (site 1: `run_turn`'s initial `for_prompt_with_trim`,
-    // history empty so nothing is eligible to remove yet). Model calls tool A.
-    let round1 = sse(vec![
-        ev_response_created("resp-1"),
-        ev_exec_command_call(call_a, "echo a"),
-        ev_completed("resp-1"),
-    ]);
-    // Turn 1, round 2 (site 2: `run_sampling_request`'s loop). Only call A's
-    // pair exists (1 eligible, keep_after = 1) so it must still be present.
-    // Model calls tool B.
-    let round2 = sse(vec![
-        ev_response_created("resp-2"),
-        ev_exec_command_call(call_b, "echo b"),
-        ev_completed("resp-2"),
-    ]);
-    // Turn 1, round 3 (site 2 again). Both A and B pairs now exist (2
-    // eligible, keep_after = 1), so the oldest (A) must be removed from the
-    // prompt this round actually receives. Model finishes the turn.
-    let round3 = sse(vec![
-        ev_response_created("resp-3"),
-        ev_assistant_message("msg-1", "ran a and b"),
-        ev_completed("resp-3"),
-    ]);
-    // Turn 2, round 1 (site 1 again, a fresh `run_turn` call). History still
-    // holds both A and B pairs across the turn boundary (trimming only ever
-    // affects what is sent to the model, never the persisted History), so the
-    // same removal must reappear here from a cold call to `for_prompt_with_trim`.
-    // Model finishes immediately with no further tool call.
-    let round4 = sse(vec![
-        ev_response_created("resp-4"),
-        ev_assistant_message("msg-2", "second turn done"),
-        ev_completed("resp-4"),
-    ]);
+        // Turn 1, round 1 (site 1: `run_turn`'s initial `for_prompt_with_trim`,
+        // history empty so nothing is eligible to remove yet). Model calls tool A.
+        let round1 = sse(vec![
+            ev_response_created("resp-1"),
+            ev_exec_command_call(call_a, "echo a"),
+            ev_completed("resp-1"),
+        ]);
+        // Turn 1, round 2 (site 2: `run_sampling_request`'s loop). Only call A's
+        // pair exists (1 eligible, keep_after = 1) so it must still be present.
+        // Model calls tool B.
+        let round2 = sse(vec![
+            ev_response_created("resp-2"),
+            ev_exec_command_call(call_b, "echo b"),
+            ev_completed("resp-2"),
+        ]);
+        // Turn 1, round 3 (site 2 again). Both A and B pairs now exist (2
+        // eligible, keep_after = 1), so the oldest (A) must be removed from the
+        // prompt this round actually receives. Model finishes the turn.
+        let round3 = sse(vec![
+            ev_response_created("resp-3"),
+            ev_assistant_message("msg-1", "ran a and b"),
+            ev_completed("resp-3"),
+        ]);
+        // Turn 2, round 1 (site 1 again, a fresh `run_turn` call). History still
+        // holds both A and B pairs across the turn boundary (trimming only ever
+        // affects what is sent to the model, never the persisted History), so the
+        // same removal must reappear here from a cold call to `for_prompt_with_trim`.
+        // Model finishes immediately with no further tool call.
+        let round4 = sse(vec![
+            ev_response_created("resp-4"),
+            ev_assistant_message("msg-2", "second turn done"),
+            ev_completed("resp-4"),
+        ]);
 
-    let request_log = mount_sse_sequence(&server, vec![round1, round2, round3, round4]).await;
+        let request_log = mount_sse_sequence(&server, vec![round1, round2, round3, round4]).await;
 
-    let mut builder = test_codex().with_config(|config| {
-        config.hide_tool_activity.trim_success = true;
-        config.hide_tool_activity.trim_after = Some(1);
-    });
-    let fixture = builder.build(&server).await?;
+        let mut builder = test_codex().with_config(|config| {
+            config.hide_tool_activity.trim_success = true;
+            config.hide_tool_activity.trim_after = Some(1);
+        });
+        let fixture = builder.build(&server).await?;
 
-    fixture.submit_turn("run tool a then tool b").await?;
-    fixture.submit_turn("wrap up").await?;
+        fixture.submit_turn("run tool a then tool b").await?;
+        fixture.submit_turn("wrap up").await?;
 
-    let requests = request_log.requests();
-    assert_eq!(
-        requests.len(),
-        4,
-        "expected exactly 4 model requests across the two turns"
-    );
+        let requests = request_log.requests();
+        assert_eq!(
+            requests.len(),
+            4,
+            "expected exactly 4 model requests across the two turns"
+        );
 
-    // Round 1: history is empty, neither call has happened yet.
-    assert!(!requests[0].has_function_call(call_a));
-    assert!(!requests[0].has_function_call(call_b));
+        // Round 1: history is empty, neither call has happened yet.
+        assert!(!requests[0].has_function_call(call_a));
+        assert!(!requests[0].has_function_call(call_b));
 
-    // Round 2 (site 2, first invocation): only A's pair exists; trim_after=1
-    // must NOT remove it yet — proves the test's own eligibility accounting
-    // before asserting real removal below.
-    assert!(
-        requests[1].has_function_call(call_a),
-        "call A must still be present with only 1 eligible pair and trim_after=1"
-    );
+        // Round 2 (site 2, first invocation): only A's pair exists; trim_after=1
+        // must NOT remove it yet — proves the test's own eligibility accounting
+        // before asserting real removal below.
+        assert!(
+            requests[1].has_function_call(call_a),
+            "call A must still be present with only 1 eligible pair and trim_after=1"
+        );
 
-    // Round 3 (site 2, real removal): A and B pairs both exist now; the
-    // oldest (A) must be gone from what is actually sent to the model, B
-    // must remain. This is call site 2 (`turn.rs` ~1626) doing real trimming.
-    assert!(
-        !requests[2].has_function_call(call_a),
-        "call site 2 (run_sampling_request loop) should have trimmed the oldest pair (A)"
-    );
-    assert!(
-        requests[2].has_function_call(call_b),
-        "the newest eligible pair (B) must be kept"
-    );
+        // Round 3 (site 2, real removal): A and B pairs both exist now; the
+        // oldest (A) must be gone from what is actually sent to the model, B
+        // must remain. This is call site 2 (`turn.rs` ~1626) doing real trimming.
+        assert!(
+            !requests[2].has_function_call(call_a),
+            "call site 2 (run_sampling_request loop) should have trimmed the oldest pair (A)"
+        );
+        assert!(
+            requests[2].has_function_call(call_b),
+            "the newest eligible pair (B) must be kept"
+        );
 
-    // Round 4 (site 1, fresh turn): the persisted History still has both
-    // pairs; a cold call to `for_prompt_with_trim` at the top of `run_turn`
-    // must independently re-derive the same removal. This is call site 1
-    // (`turn.rs` ~517) doing real trimming.
-    assert!(
-        !requests[3].has_function_call(call_a),
-        "call site 1 (top of run_turn) should have trimmed the oldest pair (A) again"
-    );
-    assert!(
-        requests[3].has_function_call(call_b),
-        "the newest eligible pair (B) must still be kept in the fresh turn's prompt"
-    );
+        // Round 4 (site 1, fresh turn): the persisted History still has both
+        // pairs; a cold call to `for_prompt_with_trim` at the top of `run_turn`
+        // must independently re-derive the same removal. This is call site 1
+        // (`turn.rs` ~517) doing real trimming.
+        assert!(
+            !requests[3].has_function_call(call_a),
+            "call site 1 (top of run_turn) should have trimmed the oldest pair (A) again"
+        );
+        assert!(
+            requests[3].has_function_call(call_b),
+            "the newest eligible pair (B) must still be kept in the fresh turn's prompt"
+        );
 
-    Ok(())
+        Ok(())
+    })
 }
 
 // M135-CdxNoBlk / A7-TrimFail caller-level coverage.
@@ -153,109 +180,110 @@ async fn trim_success_removes_oldest_pair_at_both_real_call_sites() -> Result<()
 // `trim_failures = true` instead of `trim_success`, confirming the model-facing
 // request actually loses the oldest *failed* exec_command pair once a second
 // one exists — not just that the isolated function can do it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn trim_failure_removes_oldest_pair_at_both_real_call_sites() -> Result<()> {
-    skip_if_no_network!(Ok(()));
+#[test]
+fn trim_failure_removes_oldest_pair_at_both_real_call_sites() -> Result<()> {
+    run_on_large_stack(|| async {
+        skip_if_no_network!(Ok(()));
 
-    let server = start_mock_server().await;
+        let server = start_mock_server().await;
 
-    let call_a = "history-trim-fail-call-a";
-    let call_b = "history-trim-fail-call-b";
+        let call_a = "history-trim-fail-call-a";
+        let call_b = "history-trim-fail-call-b";
 
-    // Turn 1, round 1 (site 1: `run_turn`'s initial `for_prompt_with_trim`,
-    // history empty so nothing is eligible to remove yet). Model calls
-    // failing tool A.
-    let round1 = sse(vec![
-        ev_response_created("resp-1"),
-        ev_exec_command_call(call_a, "exit 1"),
-        ev_completed("resp-1"),
-    ]);
-    // Turn 1, round 2 (site 2: `run_sampling_request`'s loop). Only call A's
-    // pair exists (1 eligible, keep_after = 1) so it must still be present.
-    // Model calls failing tool B.
-    let round2 = sse(vec![
-        ev_response_created("resp-2"),
-        ev_exec_command_call(call_b, "exit 1"),
-        ev_completed("resp-2"),
-    ]);
-    // Turn 1, round 3 (site 2 again). Both A and B failed pairs now exist (2
-    // eligible, keep_after = 1), so the oldest (A) must be removed from the
-    // prompt this round actually receives. Model finishes the turn.
-    let round3 = sse(vec![
-        ev_response_created("resp-3"),
-        ev_assistant_message("msg-1", "ran a and b"),
-        ev_completed("resp-3"),
-    ]);
-    // Turn 2, round 1 (site 1 again, a fresh `run_turn` call). History still
-    // holds both A and B pairs across the turn boundary (trimming only ever
-    // affects what is sent to the model, never the persisted History), so the
-    // same removal must reappear here from a cold call to `for_prompt_with_trim`.
-    // Model finishes immediately with no further tool call.
-    let round4 = sse(vec![
-        ev_response_created("resp-4"),
-        ev_assistant_message("msg-2", "second turn done"),
-        ev_completed("resp-4"),
-    ]);
+        // Turn 1, round 1 (site 1: `run_turn`'s initial `for_prompt_with_trim`,
+        // history empty so nothing is eligible to remove yet). Model calls
+        // failing tool A.
+        let round1 = sse(vec![
+            ev_response_created("resp-1"),
+            ev_exec_command_call(call_a, "exit 1"),
+            ev_completed("resp-1"),
+        ]);
+        // Turn 1, round 2 (site 2: `run_sampling_request`'s loop). Only call A's
+        // pair exists (1 eligible, keep_after = 1) so it must still be present.
+        // Model calls failing tool B.
+        let round2 = sse(vec![
+            ev_response_created("resp-2"),
+            ev_exec_command_call(call_b, "exit 1"),
+            ev_completed("resp-2"),
+        ]);
+        // Turn 1, round 3 (site 2 again). Both A and B failed pairs now exist (2
+        // eligible, keep_after = 1), so the oldest (A) must be removed from the
+        // prompt this round actually receives. Model finishes the turn.
+        let round3 = sse(vec![
+            ev_response_created("resp-3"),
+            ev_assistant_message("msg-1", "ran a and b"),
+            ev_completed("resp-3"),
+        ]);
+        // Turn 2, round 1 (site 1 again, a fresh `run_turn` call). History still
+        // holds both A and B pairs across the turn boundary (trimming only ever
+        // affects what is sent to the model, never the persisted History), so the
+        // same removal must reappear here from a cold call to `for_prompt_with_trim`.
+        // Model finishes immediately with no further tool call.
+        let round4 = sse(vec![
+            ev_response_created("resp-4"),
+            ev_assistant_message("msg-2", "second turn done"),
+            ev_completed("resp-4"),
+        ]);
 
-    let request_log = mount_sse_sequence(&server, vec![round1, round2, round3, round4]).await;
+        let request_log = mount_sse_sequence(&server, vec![round1, round2, round3, round4]).await;
 
-    let mut builder = test_codex().with_config(|config| {
-        config.hide_tool_activity.trim_failures = true;
-        config.hide_tool_activity.trim_after = Some(1);
-    });
-    let fixture = builder.build(&server).await?;
+        let mut builder = test_codex().with_config(|config| {
+            config.hide_tool_activity.trim_failures = true;
+            config.hide_tool_activity.trim_after = Some(1);
+        });
+        let fixture = builder.build(&server).await?;
 
-    fixture
-        .submit_turn("run failing tool a then failing tool b")
-        .await?;
-    fixture.submit_turn("wrap up").await?;
+        fixture
+            .submit_turn("run failing tool a then failing tool b")
+            .await?;
+        fixture.submit_turn("wrap up").await?;
 
-    let requests = request_log.requests();
-    assert_eq!(
-        requests.len(),
-        4,
-        "expected exactly 4 model requests across the two turns"
-    );
+        let requests = request_log.requests();
+        assert_eq!(
+            requests.len(),
+            4,
+            "expected exactly 4 model requests across the two turns"
+        );
 
-    // Round 1: history is empty, neither call has happened yet.
-    assert!(!requests[0].has_function_call(call_a));
-    assert!(!requests[0].has_function_call(call_b));
+        // Round 1: history is empty, neither call has happened yet.
+        assert!(!requests[0].has_function_call(call_a));
+        assert!(!requests[0].has_function_call(call_b));
 
-    // Round 2 (site 2, first invocation): only A's failed pair exists;
-    // trim_after=1 must NOT remove it yet — proves the test's own
-    // eligibility accounting before asserting real removal below.
-    assert!(
-        requests[1].has_function_call(call_a),
-        "call A must still be present with only 1 eligible pair and trim_after=1"
-    );
+        // Round 2 (site 2, first invocation): only A's failed pair exists;
+        // trim_after=1 must NOT remove it yet — proves the test's own
+        // eligibility accounting before asserting real removal below.
+        assert!(
+            requests[1].has_function_call(call_a),
+            "call A must still be present with only 1 eligible pair and trim_after=1"
+        );
+        // Round 3 (site 2, real removal): A and B failed pairs both exist now;
+        // the oldest (A) must be gone from what is actually sent to the model, B
+        // must remain. This is call site 2 (`turn.rs` ~1626) doing real trimming
+        // of a *failed* pair.
+        assert!(
+            !requests[2].has_function_call(call_a),
+            "call site 2 (run_sampling_request loop) should have trimmed the oldest failed pair (A)"
+        );
+        assert!(
+            requests[2].has_function_call(call_b),
+            "the newest eligible failed pair (B) must be kept"
+        );
 
-    // Round 3 (site 2, real removal): A and B failed pairs both exist now;
-    // the oldest (A) must be gone from what is actually sent to the model, B
-    // must remain. This is call site 2 (`turn.rs` ~1626) doing real trimming
-    // of a *failed* pair.
-    assert!(
-        !requests[2].has_function_call(call_a),
-        "call site 2 (run_sampling_request loop) should have trimmed the oldest failed pair (A)"
-    );
-    assert!(
-        requests[2].has_function_call(call_b),
-        "the newest eligible failed pair (B) must be kept"
-    );
+        // Round 4 (site 1, fresh turn): the persisted History still has both
+        // pairs; a cold call to `for_prompt_with_trim` at the top of `run_turn`
+        // must independently re-derive the same removal. This is call site 1
+        // (`turn.rs` ~517) doing real trimming of a *failed* pair.
+        assert!(
+            !requests[3].has_function_call(call_a),
+            "call site 1 (top of run_turn) should have trimmed the oldest failed pair (A) again"
+        );
+        assert!(
+            requests[3].has_function_call(call_b),
+            "the newest eligible failed pair (B) must still be kept in the fresh turn's prompt"
+        );
 
-    // Round 4 (site 1, fresh turn): the persisted History still has both
-    // pairs; a cold call to `for_prompt_with_trim` at the top of `run_turn`
-    // must independently re-derive the same removal. This is call site 1
-    // (`turn.rs` ~517) doing real trimming of a *failed* pair.
-    assert!(
-        !requests[3].has_function_call(call_a),
-        "call site 1 (top of run_turn) should have trimmed the oldest failed pair (A) again"
-    );
-    assert!(
-        requests[3].has_function_call(call_b),
-        "the newest eligible failed pair (B) must still be kept in the fresh turn's prompt"
-    );
-
-    Ok(())
+        Ok(())
+    })
 }
 
 // M135-CdxNoBlk / A8-TrimWarn caller-level coverage.
@@ -284,107 +312,109 @@ async fn trim_failure_removes_oldest_pair_at_both_real_call_sites() -> Result<()
 // `trim_success`/`trim_failures`, confirming the model-facing request
 // actually loses the oldest *warning-marked* exec_command pair once a second
 // one exists — not just that the isolated function can do it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn trim_warning_removes_oldest_pair_at_both_real_call_sites() -> Result<()> {
-    skip_if_no_network!(Ok(()));
+#[test]
+fn trim_warning_removes_oldest_pair_at_both_real_call_sites() -> Result<()> {
+    run_on_large_stack(|| async {
+        skip_if_no_network!(Ok(()));
 
-    let server = start_mock_server().await;
+        let server = start_mock_server().await;
 
-    let call_a = "history-trim-warn-call-a";
-    let call_b = "history-trim-warn-call-b";
+        let call_a = "history-trim-warn-call-a";
+        let call_b = "history-trim-warn-call-b";
 
-    // Turn 1, round 1 (site 1: `run_turn`'s initial `for_prompt_with_trim`,
-    // history empty so nothing is eligible to remove yet). Model calls
-    // warning-marked tool A.
-    let round1 = sse(vec![
-        ev_response_created("resp-1"),
-        ev_exec_command_call(call_a, "echo this run has a warning in it"),
-        ev_completed("resp-1"),
-    ]);
-    // Turn 1, round 2 (site 2: `run_sampling_request`'s loop). Only call A's
-    // pair exists (1 eligible, keep_after = 1) so it must still be present.
-    // Model calls warning-marked tool B.
-    let round2 = sse(vec![
-        ev_response_created("resp-2"),
-        ev_exec_command_call(call_b, "echo another warning shows up here"),
-        ev_completed("resp-2"),
-    ]);
-    // Turn 1, round 3 (site 2 again). Both A and B warning-marked pairs now
-    // exist (2 eligible, keep_after = 1), so the oldest (A) must be removed
-    // from the prompt this round actually receives. Model finishes the turn.
-    let round3 = sse(vec![
-        ev_response_created("resp-3"),
-        ev_assistant_message("msg-1", "ran a and b"),
-        ev_completed("resp-3"),
-    ]);
-    // Turn 2, round 1 (site 1 again, a fresh `run_turn` call). History still
-    // holds both A and B pairs across the turn boundary (trimming only ever
-    // affects what is sent to the model, never the persisted History), so the
-    // same removal must reappear here from a cold call to `for_prompt_with_trim`.
-    // Model finishes immediately with no further tool call.
-    let round4 = sse(vec![
-        ev_response_created("resp-4"),
-        ev_assistant_message("msg-2", "second turn done"),
-        ev_completed("resp-4"),
-    ]);
+        // Turn 1, round 1 (site 1: `run_turn`'s initial `for_prompt_with_trim`,
+        // history empty so nothing is eligible to remove yet). Model calls
+        // warning-marked tool A.
+        let round1 = sse(vec![
+            ev_response_created("resp-1"),
+            ev_exec_command_call(call_a, "echo this run has a warning in it"),
+            ev_completed("resp-1"),
+        ]);
+        // Turn 1, round 2 (site 2: `run_sampling_request`'s loop). Only call A's
+        // pair exists (1 eligible, keep_after = 1) so it must still be present.
+        // Model calls warning-marked tool B.
+        let round2 = sse(vec![
+            ev_response_created("resp-2"),
+            ev_exec_command_call(call_b, "echo another warning shows up here"),
+            ev_completed("resp-2"),
+        ]);
+        // Turn 1, round 3 (site 2 again). Both A and B warning-marked pairs now
+        // exist (2 eligible, keep_after = 1), so the oldest (A) must be removed
+        // from the prompt this round actually receives. Model finishes the turn.
+        let round3 = sse(vec![
+            ev_response_created("resp-3"),
+            ev_assistant_message("msg-1", "ran a and b"),
+            ev_completed("resp-3"),
+        ]);
+        // Turn 2, round 1 (site 1 again, a fresh `run_turn` call). History still
+        // holds both A and B pairs across the turn boundary (trimming only ever
+        // affects what is sent to the model, never the persisted History), so the
+        // same removal must reappear here from a cold call to `for_prompt_with_trim`.
+        // Model finishes immediately with no further tool call.
+        let round4 = sse(vec![
+            ev_response_created("resp-4"),
+            ev_assistant_message("msg-2", "second turn done"),
+            ev_completed("resp-4"),
+        ]);
 
-    let request_log = mount_sse_sequence(&server, vec![round1, round2, round3, round4]).await;
+        let request_log = mount_sse_sequence(&server, vec![round1, round2, round3, round4]).await;
 
-    let mut builder = test_codex().with_config(|config| {
-        config.hide_tool_activity.trim_warnings = true;
-        config.hide_tool_activity.trim_after = Some(1);
-    });
-    let fixture = builder.build(&server).await?;
+        let mut builder = test_codex().with_config(|config| {
+            config.hide_tool_activity.trim_warnings = true;
+            config.hide_tool_activity.trim_after = Some(1);
+        });
+        let fixture = builder.build(&server).await?;
 
-    fixture
-        .submit_turn("run warning tool a then warning tool b")
-        .await?;
-    fixture.submit_turn("wrap up").await?;
+        fixture
+            .submit_turn("run warning tool a then warning tool b")
+            .await?;
+        fixture.submit_turn("wrap up").await?;
 
-    let requests = request_log.requests();
-    assert_eq!(
-        requests.len(),
-        4,
-        "expected exactly 4 model requests across the two turns"
-    );
+        let requests = request_log.requests();
+        assert_eq!(
+            requests.len(),
+            4,
+            "expected exactly 4 model requests across the two turns"
+        );
 
-    // Round 1: history is empty, neither call has happened yet.
-    assert!(!requests[0].has_function_call(call_a));
-    assert!(!requests[0].has_function_call(call_b));
+        // Round 1: history is empty, neither call has happened yet.
+        assert!(!requests[0].has_function_call(call_a));
+        assert!(!requests[0].has_function_call(call_b));
 
-    // Round 2 (site 2, first invocation): only A's warning-marked pair
-    // exists; trim_after=1 must NOT remove it yet — proves the test's own
-    // eligibility accounting before asserting real removal below.
-    assert!(
-        requests[1].has_function_call(call_a),
-        "call A must still be present with only 1 eligible pair and trim_after=1"
-    );
+        // Round 2 (site 2, first invocation): only A's warning-marked pair
+        // exists; trim_after=1 must NOT remove it yet — proves the test's own
+        // eligibility accounting before asserting real removal below.
+        assert!(
+            requests[1].has_function_call(call_a),
+            "call A must still be present with only 1 eligible pair and trim_after=1"
+        );
 
-    // Round 3 (site 2, real removal): A and B warning-marked pairs both exist
-    // now; the oldest (A) must be gone from what is actually sent to the
-    // model, B must remain. This is call site 2 (`turn.rs` ~1626) doing real
-    // trimming of a *warning-marked* pair.
-    assert!(
-        !requests[2].has_function_call(call_a),
-        "call site 2 (run_sampling_request loop) should have trimmed the oldest warning-marked pair (A)"
-    );
-    assert!(
-        requests[2].has_function_call(call_b),
-        "the newest eligible warning-marked pair (B) must be kept"
-    );
+        // Round 3 (site 2, real removal): A and B warning-marked pairs both exist
+        // now; the oldest (A) must be gone from what is actually sent to the
+        // model, B must remain. This is call site 2 (`turn.rs` ~1626) doing real
+        // trimming of a *warning-marked* pair.
+        assert!(
+            !requests[2].has_function_call(call_a),
+            "call site 2 (run_sampling_request loop) should have trimmed the oldest warning-marked pair (A)"
+        );
+        assert!(
+            requests[2].has_function_call(call_b),
+            "the newest eligible warning-marked pair (B) must be kept"
+        );
 
-    // Round 4 (site 1, fresh turn): the persisted History still has both
-    // pairs; a cold call to `for_prompt_with_trim` at the top of `run_turn`
-    // must independently re-derive the same removal. This is call site 1
-    // (`turn.rs` ~517) doing real trimming of a *warning-marked* pair.
-    assert!(
-        !requests[3].has_function_call(call_a),
-        "call site 1 (top of run_turn) should have trimmed the oldest warning-marked pair (A) again"
-    );
-    assert!(
-        requests[3].has_function_call(call_b),
-        "the newest eligible warning-marked pair (B) must still be kept in the fresh turn's prompt"
-    );
+        // Round 4 (site 1, fresh turn): the persisted History still has both
+        // pairs; a cold call to `for_prompt_with_trim` at the top of `run_turn`
+        // must independently re-derive the same removal. This is call site 1
+        // (`turn.rs` ~517) doing real trimming of a *warning-marked* pair.
+        assert!(
+            !requests[3].has_function_call(call_a),
+            "call site 1 (top of run_turn) should have trimmed the oldest warning-marked pair (A) again"
+        );
+        assert!(
+            requests[3].has_function_call(call_b),
+            "the newest eligible warning-marked pair (B) must still be kept in the fresh turn's prompt"
+        );
 
-    Ok(())
+        Ok(())
+    })
 }

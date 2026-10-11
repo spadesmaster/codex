@@ -393,14 +393,18 @@ async fn initial_session_header_starts_at_the_top_of_the_viewport() {
                 .to_string()
         })
         .collect::<Vec<_>>()
-        .join("\n")
-        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>");
+        .join("\n");
 
-    let cwd = widget.config.cwd.as_path().display().to_string();
-
-    insta::assert_snapshot!(header.replace(&cwd, "/tmp/project"), @r"
+    assert!(
+        header.contains("PHX "),
+        "startup header must expose PHX build stamp"
+    );
+    let header = header
+        .replace(crate::version::CODEX_CLI_VERSION, "<VERSION>")
+        .replace(crate::history_cell::BUILD_STAMP, "<BUILD-TIMESTAMP>");
+    insta::assert_snapshot!(header, @r"
       >_ OpenAI Codex (v<VERSION>)
-         /tmp/project
+         <BUILD-TIMESTAMP>
     ");
 }
 

@@ -456,6 +456,34 @@ fn exec_command_tool_output_formats_truncated_response() {
 }
 
 #[test]
+fn exec_command_tool_output_marks_nonzero_exit_as_failure() {
+    let payload = ToolPayload::Function {
+        arguments: "{}".to_string(),
+    };
+    let output = ExecCommandToolOutput {
+        event_call_id: "call-failed".to_string(),
+        chunk_id: "failed".to_string(),
+        wall_time: std::time::Duration::ZERO,
+        raw_output: b"failure".to_vec(),
+        truncation_policy: TruncationPolicy::Tokens(10_000),
+        max_output_tokens: None,
+        process_id: None,
+        exit_code: Some(1),
+        original_token_count: None,
+        output_omitted_bytes: None,
+        hook_command: None,
+    };
+
+    assert!(!output.success_for_logging());
+    let ResponseInputItem::FunctionCallOutput { output, .. } =
+        output.to_response_item("call-failed", &payload)
+    else {
+        panic!("expected FunctionCallOutput");
+    };
+    assert_eq!(output.success, Some(false));
+}
+
+#[test]
 fn exec_command_tool_output_reserves_metadata_budget_and_preserves_policy_units() {
     let payload = ToolPayload::Function {
         arguments: "{}".to_string(),

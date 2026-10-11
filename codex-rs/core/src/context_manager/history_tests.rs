@@ -3649,7 +3649,6 @@ fn trim_success_pairs_covers_spec_fixtures() {
             .count(),
         2
     );
-
 }
 
 #[test]
@@ -3873,7 +3872,12 @@ fn trim_failure_pairs_independent_of_trim_success() {
 // M135 A8-TrimWarn: same delayed-removal contract, for the new warning marker
 // (`is_warning_output` in history.rs) instead of the plain success verdict.
 
-fn trim_pair_with_text(id: &str, name: &str, success: Option<bool>, text: &str) -> Vec<ResponseItem> {
+fn trim_pair_with_text(
+    id: &str,
+    name: &str,
+    success: Option<bool>,
+    text: &str,
+) -> Vec<ResponseItem> {
     let mut output = FunctionCallOutputPayload::from_text(text.to_string());
     output.success = success;
     vec![
