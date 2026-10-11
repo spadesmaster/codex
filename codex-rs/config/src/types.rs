@@ -881,6 +881,11 @@ pub struct Tui {
     #[serde(default = "default_true")]
     pub question_esc_back: bool,
 
+    /// Pause an active goal when the user interrupts a running turn (Esc / Ctrl+C).
+    /// Defaults to `false` so an interrupt never leaves a worker goal in `paused`.
+    #[serde(default)]
+    pub pause_goal_on_interrupt: bool,
+
     /// Start the TUI in raw scrollback mode for copy-friendly transcript output.
     /// Defaults to `false`.
     #[serde(default)]

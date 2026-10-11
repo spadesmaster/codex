@@ -309,6 +309,7 @@ async fn new_config(
         tui_resume_cwd: None,
         tui_vim_mode_default: false,
         tui_question_esc_back: true,
+        tui_pause_goal_on_interrupt: false,
         cwd: cwd.clone(),
         workspace_roots: vec![cwd],
         workspace_roots_explicit: false,

@@ -2264,6 +2264,26 @@ async fn ctrl_c_interrupt_pauses_active_goal_turn() {
 }
 
 #[tokio::test]
+async fn interrupt_does_not_pause_active_goal_by_default() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = start_active_goal_turn(&mut chat);
+    chat.local_settings.tui.pause_goal_on_interrupt = false;
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+    next_interrupt_op(&mut op_rx);
+    while let Ok(event) = rx.try_recv() {
+        assert!(
+            !matches!(
+                event,
+                AppEvent::SetThreadGoalStatus { thread_id: id, .. } if id == thread_id
+            ),
+            "interrupt must not change goal status when pause_goal_on_interrupt is off"
+        );
+    }
+}
+
+#[tokio::test]
 async fn esc_interrupt_pauses_active_goal_turn() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.show_welcome_banner = false;
@@ -2317,6 +2337,7 @@ async fn request_user_input_interrupt_pauses_active_goal_turn() {
 fn start_active_goal_turn(chat: &mut ChatWidget) -> ThreadId {
     let thread_id = ThreadId::new();
     chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
+    chat.local_settings.tui.pause_goal_on_interrupt = true;
     chat.thread_id = Some(thread_id);
     update_thread_goal(chat, thread_id, AppThreadGoalStatus::Active);
     chat.on_task_started();

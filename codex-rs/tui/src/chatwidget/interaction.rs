@@ -654,6 +654,9 @@ impl ChatWidget {
     }
 
     pub(crate) fn pause_active_goal_for_interrupt(&self) {
+        if !self.local_settings.tui.pause_goal_on_interrupt {
+            return;
+        }
         if !self.is_active_goal_turn_running() {
             return;
         }
