@@ -16,6 +16,13 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use tokio::sync::SemaphorePermit;
 
+/// Consecutive empty automatic continuation turns tolerated before the goal is blocked.
+pub(crate) const EMPTY_TURN_BLOCK_THRESHOLD: u8 = 10;
+/// Consecutive turns whose only `exec` calls failed tolerated before the goal is blocked.
+pub(crate) const EXECUTION_FAILURE_BLOCK_THRESHOLD: u8 = 6;
+const CONTINUATION_BACKOFF_BASE: Duration = Duration::from_secs(5);
+const CONTINUATION_BACKOFF_MAX: Duration = Duration::from_secs(120);
+
 #[derive(Debug)]
 pub(crate) struct GoalAccountingState {
     inner: Mutex<GoalAccountingInner>,
@@ -157,7 +164,25 @@ impl GoalAccountingState {
         }
         inner.consecutive_execution_failure_turns =
             inner.consecutive_execution_failure_turns.saturating_add(1);
-        (inner.consecutive_execution_failure_turns >= 3).then_some(goal_id)
+        (inner.consecutive_execution_failure_turns >= EXECUTION_FAILURE_BLOCK_THRESHOLD)
+            .then_some(goal_id)
+    }
+
+    /// Delay before the next automatic continuation, growing with consecutive empty or
+    /// failed turns so a finished or transiently broken worker does not spin the goal
+    /// into `Blocked` within seconds.
+    pub(crate) fn continuation_backoff(&self) -> Duration {
+        let inner = self.inner();
+        let strikes = inner
+            .consecutive_empty_turns
+            .max(inner.consecutive_execution_failure_turns);
+        if strikes == 0 {
+            return Duration::ZERO;
+        }
+        let shift = u32::from(strikes - 1).min(5);
+        CONTINUATION_BACKOFF_BASE
+            .saturating_mul(1 << shift)
+            .min(CONTINUATION_BACKOFF_MAX)
     }
 
     pub(crate) fn record_item(&self, turn_id: &str, item: &TurnItem) {
@@ -226,7 +251,7 @@ impl GoalAccountingState {
             return None;
         }
         inner.consecutive_empty_turns = inner.consecutive_empty_turns.saturating_add(1);
-        (inner.consecutive_empty_turns >= 3).then_some(goal_id)
+        (inner.consecutive_empty_turns >= EMPTY_TURN_BLOCK_THRESHOLD).then_some(goal_id)
     }
 
     /// Acquires the per-thread progress-accounting permit.

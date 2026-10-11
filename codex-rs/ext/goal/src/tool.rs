@@ -10,7 +10,7 @@ use codex_extension_api::ToolSpec;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::ThreadGoal;
 use codex_protocol::protocol::ThreadGoalStatus;
-use codex_protocol::protocol::validate_thread_goal_objective;
+use codex_protocol::protocol::validate_thread_goal_objective_with_max_length;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -37,7 +37,10 @@ pub(crate) struct GoalToolExecutor {
     analytics: GoalAnalytics,
     event_emitter: GoalEventEmitter,
     metrics: GoalMetrics,
+    max_goal_length: usize,
     max_goal_token_budget: Option<i64>,
+    update_goal_blocked: Option<String>,
+    update_goal_complete: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -92,7 +95,10 @@ impl GoalToolExecutor {
             analytics,
             event_emitter,
             metrics,
+            max_goal_length: codex_protocol::protocol::MAX_THREAD_GOAL_OBJECTIVE_CHARS,
             max_goal_token_budget: None,
+            update_goal_blocked: None,
+            update_goal_complete: None,
         }
     }
 
@@ -103,6 +109,7 @@ impl GoalToolExecutor {
         analytics: GoalAnalytics,
         event_emitter: GoalEventEmitter,
         metrics: GoalMetrics,
+        max_goal_length: usize,
         max_goal_token_budget: Option<i64>,
     ) -> Self {
         Self {
@@ -114,7 +121,10 @@ impl GoalToolExecutor {
             analytics,
             event_emitter,
             metrics,
+            max_goal_length,
             max_goal_token_budget,
+            update_goal_blocked: None,
+            update_goal_complete: None,
         }
     }
 
@@ -125,6 +135,8 @@ impl GoalToolExecutor {
         analytics: GoalAnalytics,
         event_emitter: GoalEventEmitter,
         metrics: GoalMetrics,
+        update_goal_blocked: Option<String>,
+        update_goal_complete: Option<String>,
     ) -> Self {
         Self {
             kind: GoalToolKind::Update,
@@ -135,7 +147,10 @@ impl GoalToolExecutor {
             analytics,
             event_emitter,
             metrics,
+            max_goal_length: codex_protocol::protocol::MAX_THREAD_GOAL_OBJECTIVE_CHARS,
             max_goal_token_budget: None,
+            update_goal_blocked,
+            update_goal_complete,
         }
     }
 }
@@ -203,7 +218,7 @@ impl GoalToolExecutor {
     ) -> Result<Box<dyn ToolOutput>, FunctionCallError> {
         let mut request: CreateGoalRequest = parse_arguments(invocation.function_arguments()?)?;
         request.objective = request.objective.trim().to_string();
-        validate_thread_goal_objective(&request.objective)
+        validate_thread_goal_objective_with_max_length(&request.objective, self.max_goal_length)
             .map_err(FunctionCallError::RespondToModel)?;
         request.token_budget = request.token_budget.or(self.max_goal_token_budget);
         validate_goal_budget(request.token_budget, self.max_goal_token_budget)
@@ -253,6 +268,18 @@ impl GoalToolExecutor {
                 "update_goal can only mark the existing goal complete, blocked, or paused at the user's explicit request; resume, budget-limited, and usage-limited status changes are controlled by the user or system"
                     .to_string(),
             ));
+        }
+
+        let denied_message = match args.status {
+            ThreadGoalStatus::Blocked => self.update_goal_blocked.as_ref(),
+            ThreadGoalStatus::Complete => self.update_goal_complete.as_ref(),
+            ThreadGoalStatus::Paused => None,
+            ThreadGoalStatus::Active
+            | ThreadGoalStatus::UsageLimited
+            | ThreadGoalStatus::BudgetLimited => unreachable!("status validated above"),
+        };
+        if let Some(message) = denied_message {
+            return Err(FunctionCallError::RespondToModel(message.clone()));
         }
 
         self.account_active_goal_progress(

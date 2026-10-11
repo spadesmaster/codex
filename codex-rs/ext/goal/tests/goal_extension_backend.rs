@@ -105,9 +105,13 @@ async fn installed_goal_tools_apply_maximum_token_budget() -> anyhow::Result<()>
     let thread_id = test_thread_id()?;
     seed_thread_metadata(runtime.as_ref(), thread_id).await?;
     let harness = GoalExtensionHarness::new(runtime.clone(), thread_id).await?;
+    harness.start_turn("turn-1", &TokenUsage::default()).await;
     harness.thread_store.insert(GoalExtensionConfig {
         enabled: true,
+        max_goal_length: 4_000,
         max_goal_token_budget: Some(100),
+        update_goal_blocked: None,
+        update_goal_complete: None,
     });
     let tools = harness.tools();
     let create_tool = tool_by_name(&tools, "create_goal");
@@ -148,6 +152,72 @@ async fn installed_goal_tools_apply_maximum_token_budget() -> anyhow::Result<()>
     Ok(())
 }
 
+#[tokio::test]
+async fn installed_goal_tools_apply_configured_maximum_objective_length() -> anyhow::Result<()> {
+    let runtime = test_runtime().await?;
+    let thread_id = test_thread_id()?;
+    seed_thread_metadata(runtime.as_ref(), thread_id).await?;
+    let harness = GoalExtensionHarness::new(runtime.clone(), thread_id).await?;
+    harness.start_turn("turn-1", &TokenUsage::default()).await;
+    harness.thread_store.insert(GoalExtensionConfig {
+        enabled: true,
+        max_goal_length: 10,
+        max_goal_token_budget: None,
+        update_goal_blocked: None,
+        update_goal_complete: None,
+    });
+    let tools = harness.tools();
+    let create_tool = tool_by_name(&tools, "create_goal");
+
+    let accepted = tool_call(
+        "create_goal",
+        "call-objective-at-limit",
+        json!({ "objective": "1234567890" }),
+    );
+    create_tool.handle(accepted).await?;
+    let stored_goal = runtime
+        .thread_goals()
+        .get_thread_goal(thread_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("accepted goal should be stored"))?;
+    assert_eq!(stored_goal.objective, "1234567890");
+
+    let next_thread_id = ThreadId::new();
+    seed_thread_metadata(runtime.as_ref(), next_thread_id).await?;
+    let next_harness = GoalExtensionHarness::new(runtime.clone(), next_thread_id).await?;
+    next_harness.start_turn("turn-2", &TokenUsage::default()).await;
+    next_harness.thread_store.insert(GoalExtensionConfig {
+        enabled: true,
+        max_goal_length: 10,
+        max_goal_token_budget: None,
+        update_goal_blocked: None,
+        update_goal_complete: None,
+    });
+    let next_tools = next_harness.tools();
+    let next_create_tool = tool_by_name(&next_tools, "create_goal");
+    let rejected = next_create_tool
+        .handle(tool_call(
+            "create_goal",
+            "call-objective-over-limit",
+            json!({ "objective": "12345678901" }),
+        ))
+        .await;
+    let error = match rejected {
+        Ok(_) => panic!("goal objective above the configured maximum should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error,
+        FunctionCallError::RespondToModel(
+            "goal objective must be at most 10 characters".to_string()
+        )
+    );
+    assert_eq!(
+        runtime.thread_goals().get_thread_goal(next_thread_id).await?,
+        None
+    );
+    Ok(())
+}
 #[tokio::test]
 async fn ephemeral_goal_tools_preserve_specs_but_reject_execution() -> anyhow::Result<()> {
     let runtime = test_runtime().await?;
@@ -348,7 +418,6 @@ async fn tool_finish_accounts_active_goal_progress_and_emits_event() -> anyhow::
         ))
         .await?;
     harness.sink.clear();
-
     harness
         .record_token_usage(
             "turn-1",
@@ -873,7 +942,7 @@ async fn turn_error_blocks_goal() -> anyhow::Result<()> {
 #[tokio::test]
 async fn failed_execution_turns_block_goal_unless_a_tool_succeeds() -> anyhow::Result<()> {
     for (recovery_turn, status_only_turn, blocking_turn) in
-        [(None, None, 3), (Some(2), None, 5), (None, Some(2), 4)]
+        [(None, None, 6), (Some(2), None, 8), (None, Some(2), 7)]
     {
         let runtime = test_runtime().await?;
         let thread_id = test_thread_id()?;
@@ -1237,6 +1306,76 @@ async fn update_goal_rejects_resume_and_system_limit_statuses() -> anyhow::Resul
             )
         );
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_goal_denies_configured_blocked_and_complete_without_mutation() -> anyhow::Result<()>
+{
+    let runtime = test_runtime().await?;
+    let thread_id = test_thread_id()?;
+    seed_thread_metadata(runtime.as_ref(), thread_id).await?;
+    let harness = GoalExtensionHarness::new(runtime.clone(), thread_id).await?;
+    harness.start_turn("turn-1", &TokenUsage::default()).await;
+
+    let create_tools = harness.tools();
+    let create_tool = tool_by_name(&create_tools, "create_goal");
+    create_tool
+        .handle(tool_call(
+            "create_goal",
+            "call-create-guarded-goal",
+            json!({ "objective": "guarded goal" }),
+        ))
+        .await?;
+    harness
+        .record_token_usage(
+            "turn-1",
+            &token_usage(
+                /*input_tokens*/ 20, /*cached_input_tokens*/ 5, /*output_tokens*/ 8,
+                /*reasoning_output_tokens*/ 2, /*total_tokens*/ 30,
+            ),
+        )
+        .await;
+    harness.sink.clear();
+    harness.thread_store.insert(GoalExtensionConfig {
+        enabled: true,
+        max_goal_length: 4_000,
+        max_goal_token_budget: None,
+        update_goal_blocked: Some("blocked by test policy".to_string()),
+        update_goal_complete: Some("complete by test policy".to_string()),
+    });
+    let update_tools = harness.tools();
+    let update_tool = tool_by_name(&update_tools, "update_goal");
+
+    for (status, expected) in [
+        ("blocked", "blocked by test policy"),
+        ("complete", "complete by test policy"),
+    ] {
+        let result = update_tool
+            .handle(tool_call(
+                "update_goal",
+                &format!("call-denied-{status}"),
+                json!({ "status": status }),
+            ))
+            .await;
+        let error = match result {
+            Ok(_) => panic!("configured {status} transition should be denied"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error,
+            FunctionCallError::RespondToModel(expected.to_string())
+        );
+        let goal = runtime
+            .thread_goals()
+            .get_thread_goal(thread_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("goal should remain present"))?;
+        assert_eq!(goal.status, codex_state::ThreadGoalStatus::Active);
+        assert_eq!(goal.tokens_used, 0);
+    }
+    assert_eq!(Vec::<CapturedGoalEvent>::new(), harness.sink.goal_events());
+    harness.stop_turn("turn-1").await;
     Ok(())
 }
 
@@ -1664,7 +1803,10 @@ async fn installed_tools_with_start(
         goal_service,
         |_| GoalExtensionConfig {
             enabled: true,
+            max_goal_length: 4_000,
             max_goal_token_budget: None,
+            update_goal_blocked: None,
+            update_goal_complete: None,
         },
     );
     let registry = builder.build();
@@ -1721,7 +1863,10 @@ impl GoalExtensionHarness {
             Arc::clone(&goal_service),
             |_| GoalExtensionConfig {
                 enabled: true,
+                max_goal_length: 4_000,
                 max_goal_token_budget: None,
+                update_goal_blocked: None,
+                update_goal_complete: None,
             },
         );
         let registry = Arc::new(builder.build());

@@ -53,7 +53,10 @@ use crate::tool::GoalToolExecutor;
 #[derive(Clone, Debug)]
 pub struct GoalExtensionConfig {
     pub enabled: bool,
+    pub max_goal_length: usize,
     pub max_goal_token_budget: Option<i64>,
+    pub update_goal_blocked: Option<String>,
+    pub update_goal_complete: Option<String>,
 }
 
 #[derive(Clone)]
@@ -183,12 +186,27 @@ where
                 return;
             };
 
-            if let Err(err) = runtime.continue_if_idle().await {
-                tracing::warn!(
-                    "failed to continue active goal for idle thread {}: {err}",
-                    runtime.thread_id()
-                );
+            let backoff = runtime.accounting_state().continuation_backoff();
+            if backoff.is_zero() {
+                if let Err(err) = runtime.continue_if_idle().await {
+                    tracing::warn!(
+                        "failed to continue active goal for idle thread {}: {err}",
+                        runtime.thread_id()
+                    );
+                }
+                return;
             }
+            // Empty or failed continuations back off off-thread; `continue_if_idle`
+            // re-checks that the goal is still active and the thread still idle.
+            tokio::spawn(async move {
+                tokio::time::sleep(backoff).await;
+                if let Err(err) = runtime.continue_if_idle().await {
+                    tracing::warn!(
+                        "failed to continue active goal after backoff for thread {}: {err}",
+                        runtime.thread_id()
+                    );
+                }
+            });
         })
     }
 
@@ -543,9 +561,20 @@ where
         if !runtime.tools_visible() {
             return Vec::new();
         }
-        let max_goal_token_budget = thread_store
-            .get::<GoalExtensionConfig>()
+        let goal_config = thread_store.get::<GoalExtensionConfig>();
+        let max_goal_length = goal_config.as_ref().map_or(
+            codex_protocol::protocol::MAX_THREAD_GOAL_OBJECTIVE_CHARS,
+            |config| config.max_goal_length,
+        );
+        let max_goal_token_budget = goal_config
+            .as_ref()
             .and_then(|config| config.max_goal_token_budget);
+        let update_goal_blocked = goal_config
+            .as_ref()
+            .and_then(|config| config.update_goal_blocked.clone());
+        let update_goal_complete = goal_config
+            .as_ref()
+            .and_then(|config| config.update_goal_complete.clone());
 
         let tools = [
             GoalToolExecutor::get(
@@ -563,6 +592,7 @@ where
                 self.analytics.clone(),
                 self.event_emitter.clone(),
                 self.metrics.clone(),
+                max_goal_length,
                 max_goal_token_budget,
             ),
             GoalToolExecutor::update(
@@ -572,6 +602,8 @@ where
                 self.analytics.clone(),
                 self.event_emitter.clone(),
                 self.metrics.clone(),
+                update_goal_blocked,
+                update_goal_complete,
             ),
         ];
         tools

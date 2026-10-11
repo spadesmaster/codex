@@ -60,7 +60,8 @@ fn goal_accounting_ignores_plan_mode_turns() {
 }
 
 #[test]
-fn empty_continuations_require_three_turns_without_activity_or_goal_changes() {
+fn empty_continuations_require_threshold_turns_without_activity_or_goal_changes() {
+    let n = usize::from(accounting::EMPTY_TURN_BLOCK_THRESHOLD);
     let empty_final = TurnItem::AgentMessage(AgentMessageItem {
         id: "empty".into(),
         content: vec![AgentMessageContent::Text { text: " \n".into() }],
@@ -70,13 +71,13 @@ fn empty_continuations_require_three_turns_without_activity_or_goal_changes() {
         questions: None,
     });
     for (interruption, blocking_turn) in [
-        ("none", 3),
-        ("user", 6),
-        ("tool", 6),
-        ("goal", 5),
-        ("reset", 6),
-        ("missing final", 6),
-        ("partial answer", 6),
+        ("none", n),
+        ("user", 3 + n),
+        ("tool", 3 + n),
+        ("goal", 2 + n),
+        ("reset", 3 + n),
+        ("missing final", 3 + n),
+        ("partial answer", 3 + n),
     ] {
         let state = GoalAccountingState::default();
         for turn in 1..=blocking_turn {
@@ -124,13 +125,14 @@ fn empty_continuations_require_three_turns_without_activity_or_goal_changes() {
 #[test]
 fn execution_failures_do_not_transfer_to_a_replacement_goal() {
     let state = GoalAccountingState::default();
+    let threshold = usize::from(accounting::EXECUTION_FAILURE_BLOCK_THRESHOLD);
+    let last_turn = threshold + 1;
 
-    for (turn, goal_id, replacement_goal_id) in [
-        (1, "first-goal", Some("second-goal")),
-        (2, "second-goal", None),
-        (3, "second-goal", None),
-        (4, "second-goal", None),
-    ] {
+    for turn in 1..=last_turn {
+        let (goal_id, replacement_goal_id) = match turn {
+            1 => ("first-goal", Some("second-goal")),
+            _ => ("second-goal", None),
+        };
         let turn_id = format!("turn-{turn}");
         state.start_turn(&turn_id, ModeKind::Default, &TokenUsage::default());
         state.mark_turn_goal_active(&turn_id, goal_id);
@@ -146,14 +148,40 @@ fn execution_failures_do_not_transfer_to_a_replacement_goal() {
         }
 
         assert_eq!(
-            (turn == 4).then(|| "second-goal".to_string()),
+            (turn == last_turn).then(|| "second-goal".to_string()),
             state.execution_failure_goal(&turn_id)
         );
         state.finish_turn(&turn_id);
-        if turn == 3 {
+        if turn == last_turn - 1 {
             state.reset_idle_progress_baseline_and_clear_active_goal();
         }
     }
+}
+
+#[test]
+fn continuation_backoff_grows_with_failed_turns_and_is_capped() {
+    use std::time::Duration;
+
+    let state = GoalAccountingState::default();
+    assert_eq!(Duration::ZERO, state.continuation_backoff());
+
+    let mut seen = Vec::new();
+    for turn in 1..=8 {
+        let turn_id = format!("turn-{turn}");
+        state.start_turn(&turn_id, ModeKind::Default, &TokenUsage::default());
+        state.mark_turn_goal_active(&turn_id, "goal");
+        state.record_tool_outcome(
+            &turn_id,
+            &ToolName::plain("exec"),
+            ToolCallOutcome::Failed {
+                handler_executed: true,
+            },
+        );
+        let _ = state.execution_failure_goal(&turn_id);
+        state.finish_turn(&turn_id);
+        seen.push(state.continuation_backoff().as_secs());
+    }
+    assert_eq!(vec![5, 10, 20, 40, 80, 120, 120, 120], seen);
 }
 
 #[test]
