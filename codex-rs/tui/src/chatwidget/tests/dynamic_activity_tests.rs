@@ -30,6 +30,120 @@ fn dynamic_item(id: &str, status: DynamicToolCallStatus) -> AppServerThreadItem 
     }
 }
 
+fn dynamic_completed_item(id: &str, success: bool, output: &str) -> AppServerThreadItem {
+    AppServerThreadItem::DynamicToolCall {
+        id: id.to_string(),
+        namespace: Some("functions".to_string()),
+        tool: "exec".to_string(),
+        arguments: json!({ "id": id }),
+        status: if success {
+            DynamicToolCallStatus::Completed
+        } else {
+            DynamicToolCallStatus::Failed
+        },
+        content_items: Some(vec![DynamicToolCallOutputContentItem::InputText {
+            text: output.to_string(),
+        }]),
+        success: Some(success),
+        duration_ms: Some(/*t*/ 25),
+    }
+}
+
+fn inserted_dynamic_cells(rx: &mut tokio::sync::mpsc::UnboundedReceiver<AppEvent>) -> usize {
+    std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|event| {
+            matches!(
+                event,
+                AppEvent::InsertHistoryCell(cell)
+                    if cell.as_any().is::<history_cell::DynamicToolCallCell>()
+            )
+        })
+        .count()
+}
+
+#[tokio::test]
+async fn quiet_dynamic_success_is_hidden() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_tool_activity_level(codex_config::types::ToolActivity::Quiet);
+
+    chat.handle_dynamic_tool_item_now(dynamic_completed_item("quiet-success", true, "ok"));
+
+    assert_eq!(inserted_dynamic_cells(&mut rx), 0);
+}
+
+#[tokio::test]
+async fn hide_failures_mutes_and_logs_dynamic_functions_exec() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let log_path = tempfile::NamedTempFile::new()
+        .expect("log")
+        .into_temp_path();
+    chat.config.hide_tool_activity.hide_failures = true;
+    chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
+
+    chat.handle_dynamic_tool_item_now(dynamic_completed_item(
+        "hidden-failure",
+        false,
+        "M135 dynamic failure",
+    ));
+
+    assert_eq!(inserted_dynamic_cells(&mut rx), 0);
+    let logged = std::fs::read_to_string(&log_path).expect("log read");
+    assert!(logged.contains("functions.exec"));
+    assert!(logged.contains("M135 dynamic failure"));
+}
+
+#[tokio::test]
+async fn hide_failures_preserves_successful_dynamic_functions_exec() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.config.hide_tool_activity.hide_failures = true;
+
+    chat.handle_dynamic_tool_item_now(dynamic_item(
+        "failure-policy-success",
+        DynamicToolCallStatus::InProgress,
+    ));
+    assert_eq!(inserted_dynamic_cells(&mut rx), 0);
+    chat.handle_dynamic_tool_item_now(dynamic_completed_item(
+        "failure-policy-success",
+        true,
+        "M135 ordinary success",
+    ));
+
+    assert_eq!(inserted_dynamic_cells(&mut rx), 1);
+}
+
+#[tokio::test]
+async fn hide_warnings_mutes_and_logs_dynamic_functions_exec() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    let log_path = tempfile::NamedTempFile::new()
+        .expect("log")
+        .into_temp_path();
+    chat.config.hide_tool_activity.hide_warnings = true;
+    chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
+
+    chat.handle_dynamic_tool_item_now(dynamic_completed_item(
+        "hidden-warning",
+        true,
+        "WARNING: M135 dynamic warning",
+    ));
+
+    assert_eq!(inserted_dynamic_cells(&mut rx), 0);
+    let logged = std::fs::read_to_string(&log_path).expect("log read");
+    assert!(logged.contains("functions.exec"));
+    assert!(logged.contains("M135 dynamic warning"));
+}
+
+#[tokio::test]
+async fn dynamic_failure_remains_visible_when_hiding_is_disabled() {
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.handle_dynamic_tool_item_now(dynamic_completed_item(
+        "visible-failure",
+        false,
+        "M135 visible failure",
+    ));
+
+    assert_eq!(inserted_dynamic_cells(&mut rx), 1);
+}
+
 #[tokio::test]
 async fn terminal_dynamic_activity_retains_calls_across_both_fallbacks() {
     let mut outputs = Vec::new();

@@ -161,7 +161,8 @@ pub struct FeatureToggleToml {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-#[schemars(deny_unknown_fields)] struct HideToolActivityToml {
+#[schemars(deny_unknown_fields)]
+pub struct HideToolActivityToml {
     #[serde(default)]
     pub hide_failures: bool,
     #[serde(default)]

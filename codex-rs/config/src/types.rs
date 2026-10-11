@@ -818,6 +818,16 @@ pub struct ModelAvailabilityNuxConfig {
 /// Fallback resize-reflow row cap when Codex cannot identify a terminal-specific scrollback size.
 pub const DEFAULT_TERMINAL_RESIZE_REFLOW_FALLBACK_MAX_ROWS: usize = 1_000;
 
+/// Tool-activity presentation level.
+#[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolActivity {
+    Off,
+    Concise,
+    #[default]
+    Quiet,
+}
+
 /// Collection of settings that are specific to the TUI.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
@@ -875,6 +885,10 @@ pub struct Tui {
     /// Defaults to `false`.
     #[serde(default)]
     pub raw_output_mode: bool,
+
+    /// Tool-activity presentation level.
+    #[serde(default)]
+    pub tool_activity: ToolActivity,
 
     /// Own the fullscreen transcript, including scrolling, selection, and search.
     /// Defaults to `true`; alternate-screen restrictions take precedence.

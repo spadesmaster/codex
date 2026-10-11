@@ -616,6 +616,12 @@ pub(crate) struct ChatWidget {
     /// start stays hidden through completion even if /tool-activity toggles mid-flight; a call
     /// visible at start stays visible.
     hidden_exec_calls: HashSet<String>,
+    /// Per-call tool-activity visibility latch for dynamic tool calls such as
+    /// `functions.exec`, mirroring hidden_exec_calls.
+    hidden_dynamic_calls: HashSet<String>,
+    /// Dynamic calls withheld at start solely until their terminal error/warning classification.
+    /// A normal successful completion must still render when routine activity is enabled.
+    deferred_dynamic_calls: HashSet<String>,
     /// Per-call tool-activity visibility latch for MCP tool calls, mirroring hidden_exec_calls.
     hidden_mcp_calls: HashSet<String>,
     /// Per-call tool-activity visibility latch for web-search calls, mirroring hidden_exec_calls.
@@ -1734,12 +1740,12 @@ impl ChatWidget {
         }
     }
 
-    /// Whether a command execution from `source` should render its routine transcript activity.
-    /// User-run shell commands always render; every other exec source is presentation-hidden
-    /// at `Concise` and `Quiet`. Failure/decline visibility is retained separately at completion
-    /// time (keyed on protocol status, never on this source check).
-    pub(crate) fn should_render_exec_activity(&self, source: ExecCommandSource) -> bool {
-        matches!(self.tool_activity, ToolActivity::Off) || source == ExecCommandSource::UserShell
+    /// Whether a command execution should render its routine transcript activity.
+    /// Every routine exec source is presentation-hidden at `Concise` and `Quiet`.
+    /// Failure/decline visibility is retained separately at completion time (keyed on protocol
+    /// status, never on this source check).
+    pub(crate) fn should_render_exec_activity(&self, _source: ExecCommandSource) -> bool {
+        matches!(self.tool_activity, ToolActivity::Off)
     }
 
     /// Whether a Failed/Declined status or other error/failure transcript surface should render.

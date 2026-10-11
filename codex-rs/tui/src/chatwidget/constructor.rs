@@ -187,6 +187,8 @@ impl ChatWidget {
             pending_collab_spawn_requests: HashMap::new(),
             suppressed_exec_calls: HashSet::new(),
             hidden_exec_calls: HashSet::new(),
+            hidden_dynamic_calls: HashSet::new(),
+            deferred_dynamic_calls: HashSet::new(),
             hidden_mcp_calls: HashSet::new(),
             hidden_web_search_calls: HashSet::new(),
             last_unified_wait: None,

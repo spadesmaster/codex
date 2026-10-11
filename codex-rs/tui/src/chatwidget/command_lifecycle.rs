@@ -11,7 +11,7 @@ use std::io::Write;
 /// Unified V3 tool-activity log line severity glyph: 🔴 failure (A3/A4), 🟡
 /// warning (A5/A4 sharing the same log-write site, per the Spec's format table).
 #[derive(Clone, Copy)]
-enum ToolActivitySeverity {
+pub(super) enum ToolActivitySeverity {
     Failure,
     Warning,
 }
@@ -25,7 +25,7 @@ impl ToolActivitySeverity {
     }
 }
 
-fn append_v3_tool_line(
+pub(super) fn append_v3_tool_line(
     path: &std::path::Path,
     severity: ToolActivitySeverity,
     tool: &str,
@@ -79,7 +79,7 @@ const ZERO_WARNING_PHRASES: &[&str] = &[
     "zero warnings",
 ];
 
-fn contains_warning_marker(aggregated_output: &str) -> bool {
+pub(super) fn contains_warning_marker(aggregated_output: &str) -> bool {
     aggregated_output.lines().any(|line| {
         let lower = line.to_ascii_lowercase();
         lower.contains("warning")
@@ -495,11 +495,9 @@ impl ChatWidget {
         // Confirmed as a real, live bug (not just a theoretical interaction) by
         // `hide_warnings_wins_over_concise_summary_during_replay` in tests/exec_flow.rs, which
         // failed before this fix and passes after it.
-        let warning_marked_early = source != ExecCommandSource::UnifiedExecStartup
-            && source != ExecCommandSource::UserShell
-            && routine_success
-            && contains_warning_marker(&aggregated_output);
-        let warning_hidden_early = warning_marked_early && self.config.hide_tool_activity.hide_warnings;
+        let warning_marked_early = routine_success && contains_warning_marker(&aggregated_output);
+        let warning_hidden_early =
+            warning_marked_early && self.config.hide_tool_activity.hide_warnings;
         if from_replay
             && !self.should_render_exec_activity(source)
             && routine_success
@@ -514,10 +512,8 @@ impl ChatWidget {
         // warning. The explicit M135 flags below then decide whether it is muted/logged; never
         // let ToolActivity itself hide a safety-relevant completion.
         let hidden_requires_reclassification = was_hidden
-            && (((status != codex_app_server_protocol::CommandExecutionStatus::Completed
+            && ((status != codex_app_server_protocol::CommandExecutionStatus::Completed
                 || exit_code != 0)
-                && source != ExecCommandSource::UserShell
-                && source != ExecCommandSource::UnifiedExecStartup)
                 || warning_marked_early);
         if was_hidden && !hidden_requires_reclassification {
             if routine_success && self.tool_activity == ToolActivity::Concise {
@@ -533,9 +529,8 @@ impl ChatWidget {
         let is_unified_exec_interaction =
             matches!(source, ExecCommandSource::UnifiedExecInteraction);
         let is_user_shell = source == ExecCommandSource::UserShell;
-        let failed_ordinary_result = source != ExecCommandSource::UserShell
-            && source != ExecCommandSource::UnifiedExecStartup
-            && status != codex_app_server_protocol::CommandExecutionStatus::Declined
+        let failed_ordinary_result = status
+            != codex_app_server_protocol::CommandExecutionStatus::Declined
             && (status == codex_app_server_protocol::CommandExecutionStatus::Failed
                 || (status == codex_app_server_protocol::CommandExecutionStatus::Completed
                     && exit_code != 0));
@@ -545,8 +540,6 @@ impl ChatWidget {
         // contains a "warning" marker is treated as the warning class. Mutually
         // exclusive with `failed_ordinary_result` by construction.
         let warning_ordinary_result = !failed_ordinary_result
-            && source != ExecCommandSource::UserShell
-            && source != ExecCommandSource::UnifiedExecStartup
             && status == codex_app_server_protocol::CommandExecutionStatus::Completed
             && contains_warning_marker(&aggregated_output);
 

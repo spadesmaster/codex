@@ -1331,6 +1331,83 @@ async fn user_shell_command_renders_output_not_exploring() {
 }
 
 #[tokio::test]
+async fn user_shell_routine_success_is_hidden_at_quiet_level() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_tool_activity_level(ToolActivity::Quiet);
+
+    let begin = begin_exec_with_source(
+        &mut chat,
+        "user-shell-quiet-success",
+        "echo hidden-success",
+        ExecCommandSource::UserShell,
+    );
+    end_exec(
+        &mut chat,
+        begin,
+        "HIDE_SUCCESS_CANARY",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    assert!(
+        drain_insert_history(&mut rx).is_empty(),
+        "a routine functions.exec/UserShell result must be hidden at quiet level"
+    );
+}
+
+#[tokio::test]
+async fn user_shell_failure_remains_visible_at_quiet_level() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_tool_activity_level(ToolActivity::Quiet);
+
+    let begin = begin_exec_with_source(
+        &mut chat,
+        "user-shell-quiet-failure",
+        "exit 7",
+        ExecCommandSource::UserShell,
+    );
+    end_exec(
+        &mut chat,
+        begin,
+        "",
+        "HIDE_FAILURE_CANARY",
+        /*exit_code*/ 7,
+    );
+
+    assert_eq!(
+        drain_insert_history(&mut rx).len(),
+        1,
+        "a UserShell failure must remain visible at quiet level"
+    );
+}
+
+#[tokio::test]
+async fn user_shell_warning_remains_visible_at_quiet_level() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    chat.set_tool_activity_level(ToolActivity::Quiet);
+
+    let begin = begin_exec_with_source(
+        &mut chat,
+        "user-shell-quiet-warning",
+        "echo warning",
+        ExecCommandSource::UserShell,
+    );
+    end_exec(
+        &mut chat,
+        begin,
+        "warning: HIDE_WARNING_CANARY",
+        "",
+        /*exit_code*/ 0,
+    );
+
+    assert_eq!(
+        drain_insert_history(&mut rx).len(),
+        1,
+        "a UserShell warning must remain visible at quiet level"
+    );
+}
+
+#[tokio::test]
 async fn bang_shell_enter_while_task_running_submits_run_user_shell_command() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     let thread_id = ThreadId::new();
@@ -2176,47 +2253,6 @@ async fn failed_agent_exec_off_is_visible_and_on_is_hidden() {
 }
 
 #[tokio::test]
-async fn excluded_failed_exec_sources_remain_visible() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.hide_tool_activity.hide_failures = true;
-
-    for (index, source) in [
-        ExecCommandSource::UserShell,
-        ExecCommandSource::UnifiedExecStartup,
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        let failed = AppServerThreadItem::CommandExecution {
-            model_context: None,
-            sandbox_type: None,
-            id: format!("excluded-{index}"),
-            command: "printf excluded".to_string(),
-            cwd: chat.config.cwd.clone().into(),
-            process_id: None,
-            plugin_id: None,
-            script_path: None,
-            source,
-            status: AppServerCommandExecutionStatus::Failed,
-            command_actions: Vec::new(),
-            aggregated_output: Some("excluded".to_string()),
-            exit_code: Some(7),
-            duration_ms: Some(5),
-        };
-        chat.on_command_execution_started(failed.clone());
-        chat.handle_command_execution_completed_now(failed, /*from_replay*/ false);
-    }
-
-    let visible = std::iter::from_fn(|| rx.try_recv().ok())
-        .filter_map(|event| match event {
-            AppEvent::InsertHistoryCell(cell) => Some(cell),
-            _ => None,
-        })
-        .count();
-    assert_eq!(visible, 2);
-}
-
-#[tokio::test]
 async fn failed_exec_without_begin_is_hidden_without_replacement_cell() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.hide_tool_activity.hide_failures = true;
@@ -2248,7 +2284,7 @@ async fn failed_exec_without_begin_is_hidden_without_replacement_cell() {
 }
 
 #[tokio::test]
-async fn red_hide_failures_config_mutes_failed_exec_output() {
+async fn hide_failures_mutes_usershell_exec_output() {
     let codex_home = tempfile::Builder::new()
         .prefix("chatwidget-red-")
         .tempdir()
@@ -2316,7 +2352,7 @@ async fn red_hide_failures_config_mutes_failed_exec_output() {
         plugin_id: None,
         script_path: None,
         sandbox_type: None,
-        source: ExecCommandSource::Agent,
+        source: ExecCommandSource::UserShell,
         status: AppServerCommandExecutionStatus::Failed,
         command_actions: Vec::new(),
         aggregated_output: Some("line1\r\nline2".to_string()),
@@ -2469,19 +2505,16 @@ async fn hidden_failed_completion_without_active_call_still_logs_once() {
 }
 
 #[tokio::test]
-async fn excluded_sources_stay_visible_and_unlogged() {
+async fn unified_exec_startup_failure_is_suppressed_and_logged() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     let log_path = tempfile::NamedTempFile::new()
         .expect("log")
         .into_temp_path();
     chat.config.hide_tool_activity.hide_failures = true;
     chat.config.hide_tool_activity.tool_error_log = Some(log_path.to_path_buf());
-    for (index, source) in [
-        ExecCommandSource::UserShell,
-        ExecCommandSource::UnifiedExecStartup,
-    ]
-    .into_iter()
-    .enumerate()
+    for (index, source) in [ExecCommandSource::UnifiedExecStartup]
+        .into_iter()
+        .enumerate()
     {
         let failed = AppServerThreadItem::CommandExecution {
             model_context: None,
@@ -2508,12 +2541,13 @@ async fn excluded_sources_stay_visible_and_unlogged() {
             _ => None,
         })
         .count();
-    assert_eq!(visible, 2);
-    assert!(
-        !log_path.exists()
-            || std::fs::read_to_string(&log_path)
-                .expect("log read")
-                .is_empty()
+    assert_eq!(visible, 0);
+    assert_eq!(
+        std::fs::read_to_string(&log_path)
+            .expect("startup log read")
+            .lines()
+            .count(),
+        1
     );
     let (mut control_chat, _control_rx, _control_op_rx) = make_chatwidget_manual(None).await;
     let control_log = tempfile::NamedTempFile::new()
@@ -2523,14 +2557,14 @@ async fn excluded_sources_stay_visible_and_unlogged() {
     control_chat.config.hide_tool_activity.tool_error_log = Some(control_log.to_path_buf());
     let control_failed = AppServerThreadItem::CommandExecution {
         model_context: None,
-        id: "agent-control".to_string(),
+        id: "usershell-control".to_string(),
         command: "printf control".to_string(),
         cwd: control_chat.config.cwd.clone().into(),
         process_id: None,
         plugin_id: None,
         script_path: None,
         sandbox_type: None,
-        source: ExecCommandSource::Agent,
+        source: ExecCommandSource::UserShell,
         status: AppServerCommandExecutionStatus::Failed,
         command_actions: Vec::new(),
         aggregated_output: Some("control".to_string()),
@@ -2539,7 +2573,13 @@ async fn excluded_sources_stay_visible_and_unlogged() {
     };
     control_chat.on_command_execution_started(control_failed.clone());
     control_chat.handle_command_execution_completed_now(control_failed, /*from_replay*/ false);
-    assert_eq!(std::fs::read_to_string(&control_log).expect("control log read").lines().count(), 1);
+    assert_eq!(
+        std::fs::read_to_string(&control_log)
+            .expect("control log read")
+            .lines()
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -2582,7 +2622,7 @@ async fn unwritable_tool_error_log_does_not_fail_suppression() {
 // a "warning" token) instead of the failure classification.
 
 #[tokio::test]
-async fn hide_warnings_config_mutes_warning_marked_exec_output() {
+async fn hide_warnings_mutes_usershell_warning_output() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.hide_tool_activity.hide_warnings = true;
     let warned = AppServerThreadItem::CommandExecution {
@@ -2624,7 +2664,7 @@ async fn hide_warnings_off_leaves_warning_marked_output_visible() {
         plugin_id: None,
         script_path: None,
         sandbox_type: None,
-        source: ExecCommandSource::Agent,
+        source: ExecCommandSource::UserShell,
         status: AppServerCommandExecutionStatus::Completed,
         command_actions: Vec::new(),
         aggregated_output: Some("warning: retrying in 2s".to_string()),
@@ -2756,9 +2796,12 @@ async fn duplicate_unified_interaction_success_stays_suppressed_without_replacem
             _ => None,
         })
         .count();
-    assert_eq!(inserted, 0, "a duplicate suppressed unified interaction must not render a replacement cell");
+    assert_eq!(
+        inserted, 0,
+        "a duplicate suppressed unified interaction must not render a replacement cell"
+    );
 }
-+// M135 A5/A8 false-positive narrowing: a clean run's own "0 warnings"/"no
+// M135 A5/A8 false-positive narrowing: a clean run's own "0 warnings"/"no
 // warnings found" summary line must not itself trip `hide_warnings` - see
 // `contains_warning_marker` in `command_lifecycle.rs`.
 #[tokio::test]
